@@ -1,8 +1,11 @@
 package com.transflow.backend.service;
 
 import com.transflow.backend.model.Order;
+import com.transflow.backend.model.SimulationState;
 import com.transflow.backend.repository.OrderRepository;
+import lombok.Getter;
 import lombok.RequiredArgsConstructor;
+import lombok.Setter;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -15,14 +18,26 @@ public class SimulationService {
 
     private final OrderRepository orderRepository;
     private final SimpMessagingTemplate messagingTemplate;
+    private final VirtualClock virtualClock;
 
-    // Ustawienia symulacji
     private final double TRUCK_SPEED_KMH = 80.0;
-    private final double TIME_MULTIPLIER = 100.0;
     private final int TICK_RATE_SECONDS = 2;
+
+    @Getter @Setter
+    private boolean isRunning = true;
+
+    @Getter @Setter
+    private double timeMultiplier = 60.0;
 
     @Scheduled(fixedRate = TICK_RATE_SECONDS * 1000)
     public void simulateMovement() {
+        messagingTemplate.convertAndSend("/topic/simulation",
+                new SimulationState(isRunning, timeMultiplier, virtualClock.getCurrentTime()));
+
+        if (!isRunning) return;
+
+        virtualClock.advanceTime(TICK_RATE_SECONDS, timeMultiplier);
+
         List<Order> activeOrders = orderRepository.findAll().stream()
                 .filter(o -> "IN_PROGRESS".equals(o.getStatus()))
                 .toList();
@@ -38,7 +53,7 @@ public class SimulationService {
 
             if (totalDistance <= 0) continue;
 
-            double hoursPassed = (TICK_RATE_SECONDS * TIME_MULTIPLIER) / 3600.0;
+            double hoursPassed = (TICK_RATE_SECONDS * timeMultiplier) / 3600.0;
             double distanceInTick = TRUCK_SPEED_KMH * hoursPassed;
 
             double progressIncrement = distanceInTick / totalDistance;
@@ -52,7 +67,6 @@ public class SimulationService {
 
             order.setCurrentLat(newLat);
             order.setCurrentLng(newLng);
-
             order.setGpsDistance(order.getGpsDistance() + distanceInTick);
 
             if (order.getProgress() >= 1.0) {
@@ -61,9 +75,6 @@ public class SimulationService {
 
             orderRepository.save(order);
             messagingTemplate.convertAndSend("/topic/trucks", order);
-
-            System.out.printf("Ciężarówka %s: dystans %.2f km, postęp %.2f%%\n",
-                    order.getVehicle().getPlateNumber(), totalDistance, order.getProgress() * 100);
         }
     }
 
