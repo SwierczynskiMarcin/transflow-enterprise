@@ -38,4 +38,8 @@ public class Order {
     private Double startOdometer;      // Licznik na starcie
     private Double currentOdometer;    // Aktualny licznik
     private Double gpsDistance = 0.0;  // Suma dystansu naliczonego przez GPS
+
+    private Double currentLat;
+    private Double currentLng;
+    private Double progress = 0.0;     // Postęp trasy 0.0 - 1.0
 }
