@@ -26,6 +26,9 @@ public class SimulationService {
                 .toList();
 
         for (Order order : activeOrders) {
+            if (order.getProgress() == null) order.setProgress(0.0);
+            if (order.getGpsDistance() == null) order.setGpsDistance(0.0);
+
             double totalDistance = calculateDistance(
                     order.getStartLocation().getLatitude(), order.getStartLocation().getLongitude(),
                     order.getEndLocation().getLatitude(), order.getEndLocation().getLongitude()
