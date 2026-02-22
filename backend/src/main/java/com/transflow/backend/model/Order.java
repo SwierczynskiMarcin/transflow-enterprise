@@ -34,4 +34,8 @@ public class Order {
     private Double cargoWeight;
     private Double pricePerKm;
     private String status;
+
+    private Double startOdometer;      // Licznik na starcie
+    private Double currentOdometer;    // Aktualny licznik
+    private Double gpsDistance = 0.0;  // Suma dystansu naliczonego przez GPS
 }
