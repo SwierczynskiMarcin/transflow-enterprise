@@ -3,6 +3,7 @@ package com.transflow.backend.service;
 import com.transflow.backend.model.Order;
 import com.transflow.backend.repository.OrderRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -13,6 +14,7 @@ import java.util.List;
 public class SimulationService {
 
     private final OrderRepository orderRepository;
+    private final SimpMessagingTemplate messagingTemplate;
 
     // Ustawienia symulacji
     private final double TRUCK_SPEED_KMH = 80.0;
@@ -58,6 +60,8 @@ public class SimulationService {
             }
 
             orderRepository.save(order);
+            messagingTemplate.convertAndSend("/topic/trucks", order);
+
             System.out.printf("Ciężarówka %s: dystans %.2f km, postęp %.2f%%\n",
                     order.getVehicle().getPlateNumber(), totalDistance, order.getProgress() * 100);
         }
