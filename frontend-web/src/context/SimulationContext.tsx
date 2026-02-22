@@ -5,9 +5,16 @@ import { Stomp } from '@stomp/stompjs';
 export interface VehicleData {
     id: number;
     status: string;
-    vehicle: { plateNumber: string; brand: string; model: string; };
-    currentLat: number; currentLng: number;
-    gpsDistance: number; progress: number;
+    vehicle: {
+        id: number;
+        plateNumber: string;
+        brand: string;
+        model: string;
+        currentLat: number; // Terz współrzędne są TUTAJ
+        currentLng: number; // Terz współrzędne są TUTAJ
+    };
+    gpsDistance: number;
+    progress: number;
 }
 
 interface SimulationContextProps {

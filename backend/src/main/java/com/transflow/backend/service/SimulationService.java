@@ -2,7 +2,9 @@ package com.transflow.backend.service;
 
 import com.transflow.backend.model.Order;
 import com.transflow.backend.model.SimulationState;
+import com.transflow.backend.model.Vehicle;
 import com.transflow.backend.repository.OrderRepository;
+import com.transflow.backend.repository.VehicleRepository;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.Setter;
@@ -17,6 +19,7 @@ import java.util.List;
 public class SimulationService {
 
     private final OrderRepository orderRepository;
+    private final VehicleRepository vehicleRepository;
     private final SimpMessagingTemplate messagingTemplate;
     private final VirtualClock virtualClock;
 
@@ -43,8 +46,11 @@ public class SimulationService {
                 .toList();
 
         for (Order order : activeOrders) {
+            Vehicle vehicle = order.getVehicle();
+
             if (order.getProgress() == null) order.setProgress(0.0);
             if (order.getGpsDistance() == null) order.setGpsDistance(0.0);
+            if (vehicle.getCurrentOdometer() == null) vehicle.setCurrentOdometer(0.0);
 
             double totalDistance = calculateDistance(
                     order.getStartLocation().getLatitude(), order.getStartLocation().getLongitude(),
@@ -65,15 +71,20 @@ public class SimulationService {
             double newLng = order.getStartLocation().getLongitude() +
                     (order.getEndLocation().getLongitude() - order.getStartLocation().getLongitude()) * order.getProgress();
 
-            order.setCurrentLat(newLat);
-            order.setCurrentLng(newLng);
+            vehicle.setCurrentLat(newLat);
+            vehicle.setCurrentLng(newLng);
+            vehicle.setCurrentOdometer(vehicle.getCurrentOdometer() + distanceInTick);
+
             order.setGpsDistance(order.getGpsDistance() + distanceInTick);
 
             if (order.getProgress() >= 1.0) {
                 order.setStatus("COMPLETED");
+                vehicle.setStatus("AVAILABLE");
             }
 
+            vehicleRepository.save(vehicle);
             orderRepository.save(order);
+
             messagingTemplate.convertAndSend("/topic/trucks", order);
         }
     }

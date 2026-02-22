@@ -21,4 +21,8 @@ public class Vehicle {
     private Double baseFuelConsumption;
     private Double fuelCapacity;
     private String status;
+
+    private Double currentLat;
+    private Double currentLng;
+    private Double currentOdometer = 0.0;
 }

@@ -37,8 +37,9 @@ export default function TruckMap() {
                     attribution='&copy; <a href="https://carto.com/">CARTO</a>'
                 />
 
+                // Znajdź ten fragment w kodzie (okolice 39 linijki):
                 {Array.from(trucks.values()).map((truck) => (
-                    <Marker key={truck.id} position={[truck.currentLat || 0, truck.currentLng || 0]} icon={customTruckIcon}>
+                    <Marker key={truck.id} position={[truck.vehicle.currentLat || 0, truck.vehicle.currentLng || 0]} icon={customTruckIcon}>
                         <Popup closeButton={false} autoPan={false}>
                             <div className="text-slate-800 font-sans min-w-[150px]">
                                 <strong className="text-base block mb-1 border-b pb-1 border-slate-200">

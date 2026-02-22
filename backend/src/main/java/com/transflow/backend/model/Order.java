@@ -35,11 +35,7 @@ public class Order {
     private Double pricePerKm;
     private String status;
 
-    private Double startOdometer;      // Licznik na starcie
-    private Double currentOdometer;    // Aktualny licznik
-    private Double gpsDistance = 0.0;  // Suma dystansu naliczonego przez GPS
-
-    private Double currentLat;
-    private Double currentLng;
+    private Double startOdometer;      // Licznik wpisany przy starcie zlecenia
+    private Double gpsDistance = 0.0;  // Suma dystansu naliczonego przez GPS na tym zleceniu
     private Double progress = 0.0;     // Postęp trasy 0.0 - 1.0
 }
