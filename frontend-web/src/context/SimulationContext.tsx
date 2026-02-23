@@ -4,17 +4,14 @@ import { Stomp } from '@stomp/stompjs';
 
 export interface VehicleData {
     id: number;
-    status: string;
-    vehicle: {
-        id: number;
-        plateNumber: string;
-        brand: string;
-        model: string;
-        currentLat: number; // Terz współrzędne są TUTAJ
-        currentLng: number; // Terz współrzędne są TUTAJ
-    };
-    gpsDistance: number;
+    plateNumber: string;
+    brand: string;
+    model: string;
+    currentLat: number;
+    currentLng: number;
+    status: string; // 'AVAILABLE', 'BUSY'
     progress: number;
+    gpsDistance: number;
 }
 
 interface SimulationContextProps {
@@ -36,7 +33,6 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     const [isPlaying, setIsPlaying] = useState(true);
     const [speed, setSpeed] = useState(60);
     const [virtualTime, setVirtualTime] = useState<string | null>(null);
-
     const [mapCenter, setMapCenter] = useState<[number, number]>([52.0, 19.0]);
     const [mapZoom, setMapZoom] = useState<number>(6);
 
@@ -49,6 +45,28 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
             })
             .catch(err => console.error("API Init Error:", err));
 
+        fetch('http://localhost:8080/api/vehicles')
+            .then(res => res.json())
+            .then((vehicles: any[]) => {
+                setTrucks(prev => {
+                    const newMap = new Map(prev);
+                    vehicles.forEach(v => {
+                        newMap.set(v.id, {
+                            id: v.id,
+                            plateNumber: v.plateNumber,
+                            brand: v.brand,
+                            model: v.model,
+                            currentLat: v.currentLat || 52.0,
+                            currentLng: v.currentLng || 19.0,
+                            status: v.status || 'AVAILABLE',
+                            progress: 0,
+                            gpsDistance: 0
+                        });
+                    });
+                    return newMap;
+                });
+            });
+
         const socket = new SockJS('http://localhost:8080/ws-trucks');
         const stompClient = Stomp.over(socket);
         stompClient.debug = () => {};
@@ -57,15 +75,27 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
             console.log("✅ Wpięto globalny WebSocket (Context)");
 
             stompClient.subscribe('/topic/trucks', (message) => {
-                const truckData: VehicleData = JSON.parse(message.body);
+                const orderData = JSON.parse(message.body);
+                const vehicle = orderData.vehicle;
 
                 setTrucks((prev) => {
                     const newMap = new Map(prev);
-                    if (truckData.status === 'COMPLETED' || truckData.progress >= 1.0) {
-                        newMap.delete(truckData.id);
-                    } else {
-                        newMap.set(truckData.id, truckData);
-                    }
+
+                    const isFinished = orderData.status === 'COMPLETED' || orderData.progress >= 1.0;
+
+                    newMap.set(vehicle.id, {
+                        ...newMap.get(vehicle.id),
+                        id: vehicle.id,
+                        plateNumber: vehicle.plateNumber,
+                        brand: vehicle.brand,
+                        model: vehicle.model,
+                        currentLat: vehicle.currentLat,
+                        currentLng: vehicle.currentLng,
+                        status: isFinished ? 'AVAILABLE' : 'BUSY',
+                        progress: isFinished ? 0 : orderData.progress,
+                        gpsDistance: orderData.gpsDistance
+                    });
+
                     return newMap;
                 });
             });

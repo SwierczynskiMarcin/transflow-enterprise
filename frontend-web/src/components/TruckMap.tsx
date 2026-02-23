@@ -6,22 +6,32 @@ import SimulationControls from './map/SimulationControls';
 import MapResizer from './map/MapResizer';
 import { useSimulation } from '../context/SimulationContext';
 
-const truckIconHtml = renderToString(
-    <div className="bg-slate-900 p-2 rounded-full border-2 border-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.5)] text-cyan-400 flex items-center justify-center">
-        <Truck size={20} />
-    </div>
-);
+// Funkcja generująca ikony na podstawie koloru (dla statusu BUSY i AVAILABLE)
+const createTruckIcon = (colorClass: string, glowColor: string) => {
+    const htmlString = renderToString(
+        <div className={`bg-slate-900 p-2 rounded-full border-2 ${colorClass} shadow-[0_0_15px_${glowColor}] flex items-center justify-center`}>
+            <Truck size={20} className={colorClass.replace('border-', 'text-')} />
+        </div>
+    );
 
-const customTruckIcon = L.divIcon({
-    className: 'bg-transparent border-none transition-all duration-[2000ms] ease-linear',
-    html: truckIconHtml,
-    iconSize: [40, 40],
-    iconAnchor: [20, 20],
-    popupAnchor: [0, -20]
-});
+    return L.divIcon({
+        className: 'bg-transparent border-none transition-all duration-[2000ms] ease-linear',
+        html: htmlString,
+        iconSize: [40, 40],
+        iconAnchor: [20, 20],
+        popupAnchor: [0, -20]
+    });
+};
+
+// Zdefiniowane style ikon
+const busyIcon = createTruckIcon('border-cyan-400', 'rgba(34,211,238,0.5)');
+const availableIcon = createTruckIcon('border-emerald-400', 'rgba(52,211,153,0.5)');
 
 export default function TruckMap() {
     const { trucks, mapCenter, mapZoom } = useSimulation();
+
+    // Do prawego panelu chcemy tylko te ciężarówki, które są w trasie
+    const activeTrucks = Array.from(trucks.values()).filter(t => t.status === 'BUSY');
 
     return (
         <div className="absolute inset-0 z-0">
@@ -37,24 +47,37 @@ export default function TruckMap() {
                     attribution='&copy; <a href="https://carto.com/">CARTO</a>'
                 />
 
-                // Znajdź ten fragment w kodzie (okolice 39 linijki):
                 {Array.from(trucks.values()).map((truck) => (
-                    <Marker key={truck.id} position={[truck.vehicle.currentLat || 0, truck.vehicle.currentLng || 0]} icon={customTruckIcon}>
+                    <Marker
+                        key={truck.id}
+                        position={[truck.currentLat, truck.currentLng]}
+                        icon={truck.status === 'BUSY' ? busyIcon : availableIcon}
+                    >
                         <Popup closeButton={false} autoPan={false}>
                             <div className="text-slate-800 font-sans min-w-[150px]">
                                 <strong className="text-base block mb-1 border-b pb-1 border-slate-200">
-                                    {truck.vehicle.brand} {truck.vehicle.model}
+                                    {truck.brand} {truck.model}
                                 </strong>
-                                <span className="text-sm leading-tight text-slate-600">
-                                    Rej: <strong className="text-slate-800">{truck.vehicle.plateNumber}</strong><br/>
-                                    Postęp: <strong className="text-cyan-600">{(truck.progress * 100).toFixed(1)}%</strong>
+                                <span className="text-sm leading-tight text-slate-600 block mb-2">
+                                    Rej: <strong className="text-slate-800">{truck.plateNumber}</strong>
                                 </span>
+
+                                {truck.status === 'BUSY' ? (
+                                    <span className="bg-cyan-100 text-cyan-800 text-xs font-bold px-2 py-1 rounded-full uppercase">
+                                        W trasie: {(truck.progress * 100).toFixed(1)}%
+                                    </span>
+                                ) : (
+                                    <span className="bg-emerald-100 text-emerald-800 text-xs font-bold px-2 py-1 rounded-full uppercase">
+                                        Gotowy do drogi
+                                    </span>
+                                )}
                             </div>
                         </Popup>
                     </Marker>
                 ))}
             </MapContainer>
 
+            {/* Pływający Panel Aktywnych Zleceń */}
             <div className="absolute top-6 right-6 z-[1000] w-80 bg-slate-900/80 backdrop-blur-md rounded-2xl border border-slate-700 shadow-2xl overflow-hidden flex flex-col pointer-events-auto">
                 <div className="p-4 bg-slate-800/50 border-b border-slate-700 flex items-center justify-between">
                     <h2 className="text-white font-semibold flex items-center gap-2">
@@ -62,18 +85,21 @@ export default function TruckMap() {
                         Zlecenia w toku
                     </h2>
                     <span className="bg-cyan-500/20 text-cyan-400 text-xs px-2 py-1 rounded-full font-medium">
-                        {trucks.size} w trasie
+                        {activeTrucks.length} w trasie
                     </span>
                 </div>
                 <div className="p-4 flex-1 min-h-[150px] max-h-[400px] overflow-y-auto">
-                    {trucks.size === 0 ? (
-                        <div className="h-full flex items-center justify-center text-slate-400 text-sm">Czysto na drogach...</div>
+                    {activeTrucks.length === 0 ? (
+                        <div className="h-full flex flex-col items-center justify-center text-slate-400 text-sm gap-2 mt-4">
+                            <span>Brak aktywnych zleceń.</span>
+                            <span className="text-xs">Wszystkie pojazdy czekają w bazach.</span>
+                        </div>
                     ) : (
                         <div className="space-y-4">
-                            {Array.from(trucks.values()).map(truck => (
+                            {activeTrucks.map(truck => (
                                 <div key={truck.id} className="bg-slate-800/80 rounded-lg p-3 border border-slate-700">
                                     <div className="flex justify-between items-center mb-2">
-                                        <span className="text-white font-medium text-sm">{truck.vehicle.plateNumber}</span>
+                                        <span className="text-white font-medium text-sm">{truck.plateNumber}</span>
                                         <span className="text-cyan-400 text-xs font-bold">{(truck.progress * 100).toFixed(0)}%</span>
                                     </div>
                                     <div className="w-full bg-slate-700 rounded-full h-1.5 overflow-hidden">
