@@ -19,5 +19,10 @@ public class Driver {
     private String lastName;
     private String phoneNumber;
     private Double totalDrivingTime = 0.0;
+
     private String status;
+
+    @OneToOne
+    @JoinColumn(name = "vehicle_id", unique = true)
+    private Vehicle assignedVehicle;
 }

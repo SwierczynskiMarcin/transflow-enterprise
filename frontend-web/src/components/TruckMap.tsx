@@ -59,7 +59,8 @@ export default function TruckMap() {
                                     {truck.brand} {truck.model}
                                 </strong>
                                 <span className="text-sm leading-tight text-slate-600 block mb-2">
-                                    Rej: <strong className="text-slate-800">{truck.plateNumber}</strong>
+                                    Rej: <strong className="text-slate-800">{truck.plateNumber}</strong><br/>
+                                    Kierowca: <strong className="text-slate-800">{truck.driverName}</strong>
                                 </span>
 
                                 {truck.status === 'BUSY' ? (
