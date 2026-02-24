@@ -14,9 +14,10 @@ public class Location {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-
-    private String name;      // np. Warszawa
-    private String address;   // np. ul. Logistyczna 1
-    private Double latitude;  // szerokość geograficzna
-    private Double longitude; // długość geograficzna
+    private String name;
+    private String companyName;
+    private String type;
+    private Double latitude;
+    private Double longitude;
+    private String address;
 }

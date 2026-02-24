@@ -6,7 +6,6 @@ import SimulationControls from './map/SimulationControls';
 import MapResizer from './map/MapResizer';
 import { useSimulation } from '../context/SimulationContext';
 
-// Funkcja generująca ikony na podstawie koloru (dla statusu BUSY i AVAILABLE)
 const createTruckIcon = (colorClass: string, glowColor: string) => {
     const htmlString = renderToString(
         <div className={`bg-slate-900 p-2 rounded-full border-2 ${colorClass} shadow-[0_0_15px_${glowColor}] flex items-center justify-center`}>
@@ -23,14 +22,12 @@ const createTruckIcon = (colorClass: string, glowColor: string) => {
     });
 };
 
-// Zdefiniowane style ikon
 const busyIcon = createTruckIcon('border-cyan-400', 'rgba(34,211,238,0.5)');
 const availableIcon = createTruckIcon('border-emerald-400', 'rgba(52,211,153,0.5)');
 
 export default function TruckMap() {
     const { trucks, mapCenter, mapZoom } = useSimulation();
 
-    // Do prawego panelu chcemy tylko te ciężarówki, które są w trasie
     const activeTrucks = Array.from(trucks.values()).filter(t => t.status === 'BUSY');
 
     return (

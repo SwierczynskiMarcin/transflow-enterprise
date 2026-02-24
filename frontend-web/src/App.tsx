@@ -2,8 +2,9 @@ import { useState } from "react";
 import MainLayout from "./components/MainLayout";
 import TruckMap from "./components/TruckMap";
 import VehicleManager from "./components/vehicles/VehicleManager";
-import { SimulationProvider } from "./context/SimulationContext";
 import DriverManager from "./components/drivers/DriverManager";
+import LocationManager from "./components/locations/LocationManager";
+import { SimulationProvider } from "./context/SimulationContext";
 
 function AppContent() {
     const [currentView, setCurrentView] = useState("map");
@@ -20,6 +21,10 @@ function AppContent() {
             {currentView === "orders" && renderPlaceholder("Widok Zarządzania Zleceniami")}
             {currentView === "vehicles" && <VehicleManager />}
             {currentView === "drivers" && <DriverManager />}
+
+            {/* Obsługa naszej nowej zakładki z menu bocznego */}
+            {currentView === "locations" && <LocationManager />}
+
             {currentView === "settings" && renderPlaceholder("Ustawienia Systemu")}
         </MainLayout>
     );

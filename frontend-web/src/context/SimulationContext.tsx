@@ -12,7 +12,7 @@ export interface VehicleData {
     status: string;
     progress: number;
     gpsDistance: number;
-    driverName?: string; // NOWE POLE
+    driverName?: string;
 }
 
 interface SimulationContextProps {
@@ -40,7 +40,6 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
     const refreshVehicles = useCallback(async () => {
         try {
-            // Pobieramy naraz i pojazdy, i kierowców
             const [vehRes, drvRes] = await Promise.all([
                 fetch('http://localhost:8080/api/vehicles'),
                 fetch('http://localhost:8080/api/drivers')
@@ -49,7 +48,6 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
             const vehicles: any[] = await vehRes.json();
             const drivers: any[] = await drvRes.json();
 
-            // Tworzymy mapę przypisań: vehicle_id -> Imię Nazwisko
             const driverMap = new Map();
             drivers.forEach(d => {
                 if (d.assignedVehicle) {
