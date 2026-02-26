@@ -15,8 +15,20 @@ export interface VehicleData {
     driverName?: string;
 }
 
+// NOWE: Interfejs dla lokalizacji
+export interface LocationData {
+    id: number;
+    name: string;
+    companyName: string;
+    type: string;
+    latitude: number;
+    longitude: number;
+    address: string;
+}
+
 interface SimulationContextProps {
     trucks: Map<number, VehicleData>;
+    locations: LocationData[]; // NOWE
     isPlaying: boolean;
     speed: number;
     virtualTime: string | null;
@@ -26,17 +38,30 @@ interface SimulationContextProps {
     changeSpeed: (newSpeed: number) => Promise<void>;
     setMapViewState: (center: [number, number], zoom: number) => void;
     refreshVehicles: () => Promise<void>;
+    refreshLocations: () => Promise<void>; // NOWE
 }
 
 const SimulationContext = createContext<SimulationContextProps | undefined>(undefined);
 
 export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [trucks, setTrucks] = useState<Map<number, VehicleData>>(new Map());
+    const [locations, setLocations] = useState<LocationData[]>([]); // NOWE
     const [isPlaying, setIsPlaying] = useState(true);
     const [speed, setSpeed] = useState(60);
     const [virtualTime, setVirtualTime] = useState<string | null>(null);
     const [mapCenter, setMapCenter] = useState<[number, number]>([52.0, 19.0]);
     const [mapZoom, setMapZoom] = useState<number>(6);
+
+    // NOWE: Pobieranie lokalizacji z bazy
+    const refreshLocations = useCallback(async () => {
+        try {
+            const res = await fetch('http://localhost:8080/api/locations');
+            const data = await res.json();
+            setLocations(data);
+        } catch (err) {
+            console.error("Błąd pobierania lokalizacji:", err);
+        }
+    }, []);
 
     const refreshVehicles = useCallback(async () => {
         try {
@@ -74,7 +99,7 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
                         status: existing?.status === 'BUSY' ? 'BUSY' : (v.status || 'AVAILABLE'),
                         progress: existing ? existing.progress : 0,
                         gpsDistance: existing ? existing.gpsDistance : 0,
-                        driverName: driverMap.get(v.id) || 'Brak przypisania' // Łączymy dane!
+                        driverName: driverMap.get(v.id) || 'Brak przypisania'
                     });
                 });
                 return newMap;
@@ -94,6 +119,7 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
             .catch(err => console.error("API Init Error:", err));
 
         refreshVehicles();
+        refreshLocations(); // NOWE: Inicjalizacja lokalizacji
 
         const socket = new SockJS('http://localhost:8080/ws-trucks');
         const stompClient = Stomp.over(socket);
@@ -137,15 +163,15 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         return () => {
             if (stompClient.connected) stompClient.disconnect();
         };
-    }, [refreshVehicles]);
+    }, [refreshVehicles, refreshLocations]); // NOWE: dodano zależność
 
-    const togglePlay = async () => { /* bez zmian */
+    const togglePlay = async () => {
         const res = await fetch('http://localhost:8080/api/simulation/toggle', { method: 'POST' });
         const data = await res.json();
         setIsPlaying(data.isRunning);
     };
 
-    const changeSpeed = async (newSpeed: number) => { /* bez zmian */
+    const changeSpeed = async (newSpeed: number) => {
         setSpeed(newSpeed);
         await fetch(`http://localhost:8080/api/simulation/speed?multiplier=${newSpeed}`, { method: 'POST' });
     };
@@ -157,9 +183,9 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
     return (
         <SimulationContext.Provider value={{
-            trucks, isPlaying, speed, virtualTime,
+            trucks, locations, isPlaying, speed, virtualTime, // NOWE: udostępnienie locations
             mapCenter, mapZoom,
-            togglePlay, changeSpeed, setMapViewState, refreshVehicles
+            togglePlay, changeSpeed, setMapViewState, refreshVehicles, refreshLocations // NOWE: udostępnienie funkcji
         }}>
             {children}
         </SimulationContext.Provider>
