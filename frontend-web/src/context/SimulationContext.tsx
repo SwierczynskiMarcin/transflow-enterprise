@@ -15,7 +15,6 @@ export interface VehicleData {
     driverName?: string;
 }
 
-// NOWE: Interfejs dla lokalizacji
 export interface LocationData {
     id: number;
     name: string;
@@ -52,7 +51,6 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     const [mapCenter, setMapCenter] = useState<[number, number]>([52.0, 19.0]);
     const [mapZoom, setMapZoom] = useState<number>(6);
 
-    // NOWE: Pobieranie lokalizacji z bazy
     const refreshLocations = useCallback(async () => {
         try {
             const res = await fetch('http://localhost:8080/api/locations');
@@ -119,7 +117,7 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
             .catch(err => console.error("API Init Error:", err));
 
         refreshVehicles();
-        refreshLocations(); // NOWE: Inicjalizacja lokalizacji
+        refreshLocations();
 
         const socket = new SockJS('http://localhost:8080/ws-trucks');
         const stompClient = Stomp.over(socket);
@@ -163,7 +161,7 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         return () => {
             if (stompClient.connected) stompClient.disconnect();
         };
-    }, [refreshVehicles, refreshLocations]); // NOWE: dodano zależność
+    }, [refreshVehicles, refreshLocations]);
 
     const togglePlay = async () => {
         const res = await fetch('http://localhost:8080/api/simulation/toggle', { method: 'POST' });

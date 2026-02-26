@@ -1,12 +1,11 @@
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import L from 'leaflet';
 import { renderToString } from 'react-dom/server';
-import { Truck, Activity, Building2 } from 'lucide-react'; // NOWE: Zaimportowałem Building2 dla ikonek
+import { Truck, Activity, Building2 } from 'lucide-react';
 import SimulationControls from './map/SimulationControls';
 import MapResizer from './map/MapResizer';
 import { useSimulation } from '../context/SimulationContext';
 
-// --- Twój oryginalny kod od trucków ---
 const createTruckIcon = (colorClass: string, glowColor: string) => {
     const htmlString = renderToString(
         <div className={`bg-slate-900 p-2 rounded-full border-2 ${colorClass} shadow-[0_0_15px_${glowColor}] flex items-center justify-center`}>
@@ -26,7 +25,6 @@ const createTruckIcon = (colorClass: string, glowColor: string) => {
 const busyIcon = createTruckIcon('border-cyan-400', 'rgba(34,211,238,0.5)');
 const availableIcon = createTruckIcon('border-emerald-400', 'rgba(52,211,153,0.5)');
 
-// --- NOWE: Kod do pinezek lokalizacji (pasujący stylem do Twoich trucków) ---
 const createLocationIcon = (type: string) => {
     let colorClass = 'border-rose-400';
     let textColorClass = 'text-rose-400';
@@ -77,7 +75,6 @@ export default function TruckMap() {
                     attribution='&copy; <a href="https://carto.com/">CARTO</a>'
                 />
 
-                {/* NOWE: Pętla renderująca Lokalizacje (Magazyny, Bazy) z bazy adresowej */}
                 {locations.map(loc => (
                     <Marker
                         key={`loc-${loc.id}`}
@@ -136,7 +133,6 @@ export default function TruckMap() {
                 ))}
             </MapContainer>
 
-            {/* Twój absolutnie nienaruszony Pływający Panel Aktywnych Zleceń */}
             <div className="absolute top-6 right-6 z-[1000] w-80 bg-slate-900/80 backdrop-blur-md rounded-2xl border border-slate-700 shadow-2xl overflow-hidden flex flex-col pointer-events-auto">
                 <div className="p-4 bg-slate-800/50 border-b border-slate-700 flex items-center justify-between">
                     <h2 className="text-white font-semibold flex items-center gap-2">
@@ -171,7 +167,6 @@ export default function TruckMap() {
                 </div>
             </div>
 
-            {/* Twoje nienaruszone Controls */}
             <SimulationControls />
         </div>
     );
