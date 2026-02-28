@@ -22,7 +22,6 @@ function AppContent() {
             {currentView === "vehicles" && <VehicleManager />}
             {currentView === "drivers" && <DriverManager />}
 
-            {/* Obsługa naszej nowej zakładki z menu bocznego */}
             {currentView === "locations" && <LocationManager />}
 
             {currentView === "settings" && renderPlaceholder("Ustawienia Systemu")}

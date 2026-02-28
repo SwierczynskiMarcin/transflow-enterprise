@@ -34,7 +34,6 @@ export default function CoordinatePickerMap({ initialLat, initialLng, onSave, on
 
     return (
         <div className="fixed inset-0 z-[9999] bg-slate-900 flex">
-            {/* Lewa strona: Mapa */}
             <div className="flex-1 relative">
                 <MapContainer
                     center={[initialLat, initialLng]}
@@ -44,14 +43,12 @@ export default function CoordinatePickerMap({ initialLat, initialLng, onSave, on
                     <TileLayer url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png" />
                     <MapClickHandler onLocationSelected={(lat, lng) => setSelectedLatLng([lat, lng])} />
 
-                    {/* Jeśli użytkownik kliknął, pokaż pulsujący marker */}
                     {selectedLatLng && (
                         <Marker position={selectedLatLng} icon={pulsingRedIcon} />
                     )}
                 </MapContainer>
             </div>
 
-            {/* Prawa strona: Panel operacyjny */}
             <div className="w-80 bg-slate-900 border-l border-slate-700 p-6 flex flex-col shadow-2xl z-[10000]">
                 <h2 className="text-xl font-bold text-white mb-4">Wybierz punkt</h2>
                 <p className="text-slate-400 text-sm mb-6">

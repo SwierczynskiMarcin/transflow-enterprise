@@ -71,7 +71,6 @@ export default function LocationManager() {
     return (
         <div className="p-8 h-full w-full overflow-y-auto bg-slate-900 text-slate-200 relative">
 
-            {/* Nakładka z mapą do wybierania (renderuje się na wierzchu, gdy isPickerMapOpen === true) */}
             {isPickerMapOpen && (
                 <CoordinatePickerMap
                     initialLat={lat}
@@ -111,7 +110,6 @@ export default function LocationManager() {
                     </div>
                     <div><label className="block text-xs text-slate-400 uppercase mb-1">Pełny Adres</label><input value={address} onChange={e => setAddress(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white outline-none focus:border-rose-400" /></div>
 
-                    {/* SEKCJA KOORDYNATÓW ZE ZMIENIONYM UKŁADEM I PRZYCISKIEM MAPY */}
                     <div className="flex gap-2 md:col-span-2 items-end bg-slate-900/50 p-3 rounded-xl border border-slate-700">
                         <div className="flex-1">
                             <label className="block text-xs text-slate-400 uppercase mb-1">Lat (Szerokość)</label>
@@ -121,7 +119,6 @@ export default function LocationManager() {
                             <label className="block text-xs text-slate-400 uppercase mb-1">Lng (Długość)</label>
                             <input type="number" step="0.000001" required value={lng} onChange={e => setLng(Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white outline-none focus:border-rose-400" />
                         </div>
-                        {/* PRZYCISK "WYBIERZ Z MAPY" */}
                         <button
                             type="button"
                             onClick={() => setIsPickerMapOpen(true)}

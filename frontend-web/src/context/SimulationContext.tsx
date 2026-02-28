@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import SockJS from 'sockjs-client';
-import { Stomp } from '@stomp/stompjs';
+import { Client } from '@stomp/stompjs';
 
 export interface VehicleData {
     id: number;
@@ -10,9 +10,17 @@ export interface VehicleData {
     currentLat: number;
     currentLng: number;
     status: string;
+    orderStatus?: string;
     progress: number;
     gpsDistance: number;
     driverName?: string;
+}
+
+export interface ActiveRoute {
+    vehicleId: number;
+    routePolylineApproaching: string;
+    routePolylineTransit: string;
+    orderStatus: string;
 }
 
 export interface LocationData {
@@ -27,7 +35,8 @@ export interface LocationData {
 
 interface SimulationContextProps {
     trucks: Map<number, VehicleData>;
-    locations: LocationData[]; // NOWE
+    locations: LocationData[];
+    activeRoutes: Map<number, ActiveRoute>;
     isPlaying: boolean;
     speed: number;
     virtualTime: string | null;
@@ -37,29 +46,38 @@ interface SimulationContextProps {
     changeSpeed: (newSpeed: number) => Promise<void>;
     setMapViewState: (center: [number, number], zoom: number) => void;
     refreshVehicles: () => Promise<void>;
-    refreshLocations: () => Promise<void>; // NOWE
+    refreshLocations: () => Promise<void>;
+    refreshRoutes: () => Promise<void>;
 }
 
 const SimulationContext = createContext<SimulationContextProps | undefined>(undefined);
 
 export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-    const [trucks, setTrucks] = useState<Map<number, VehicleData>>(new Map());
-    const [locations, setLocations] = useState<LocationData[]>([]); // NOWE
+    const[trucks, setTrucks] = useState<Map<number, VehicleData>>(new Map());
+    const [locations, setLocations] = useState<LocationData[]>([]);
+    const [activeRoutes, setActiveRoutes] = useState<Map<number, ActiveRoute>>(new Map());
     const [isPlaying, setIsPlaying] = useState(true);
     const [speed, setSpeed] = useState(60);
     const [virtualTime, setVirtualTime] = useState<string | null>(null);
     const [mapCenter, setMapCenter] = useState<[number, number]>([52.0, 19.0]);
-    const [mapZoom, setMapZoom] = useState<number>(6);
+    const[mapZoom, setMapZoom] = useState<number>(6);
 
     const refreshLocations = useCallback(async () => {
         try {
             const res = await fetch('http://localhost:8080/api/locations');
-            const data = await res.json();
-            setLocations(data);
-        } catch (err) {
-            console.error("Błąd pobierania lokalizacji:", err);
-        }
-    }, []);
+            setLocations(await res.json());
+        } catch (err) {}
+    },[]);
+
+    const refreshRoutes = useCallback(async () => {
+        try {
+            const res = await fetch('http://localhost:8080/api/orders/active-routes');
+            const data: ActiveRoute[] = await res.json();
+            const routeMap = new Map();
+            data.forEach(r => routeMap.set(r.vehicleId, r));
+            setActiveRoutes(routeMap);
+        } catch (err) {}
+    },[]);
 
     const refreshVehicles = useCallback(async () => {
         try {
@@ -73,9 +91,7 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
             const driverMap = new Map();
             drivers.forEach(d => {
-                if (d.assignedVehicle) {
-                    driverMap.set(d.assignedVehicle.id, `${d.firstName} ${d.lastName}`);
-                }
+                if (d.assignedVehicle) driverMap.set(d.assignedVehicle.id, `${d.firstName} ${d.lastName}`);
             });
 
             setTrucks(prev => {
@@ -102,10 +118,8 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
                 });
                 return newMap;
             });
-        } catch (err) {
-            console.error("Błąd pobierania danych:", err);
-        }
-    }, []);
+        } catch (err) {}
+    },[]);
 
     useEffect(() => {
         fetch('http://localhost:8080/api/simulation/status')
@@ -113,55 +127,62 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
             .then(data => {
                 setIsPlaying(data.isRunning);
                 setSpeed(data.timeMultiplier);
-            })
-            .catch(err => console.error("API Init Error:", err));
+            }).catch(() => {});
 
         refreshVehicles();
         refreshLocations();
+        refreshRoutes();
 
-        const socket = new SockJS('http://localhost:8080/ws-trucks');
-        const stompClient = Stomp.over(socket);
-        stompClient.debug = () => {};
+        const client = new Client({
+            webSocketFactory: () => new SockJS('http://localhost:8080/ws-trucks'),
+            reconnectDelay: 5000,
+            onConnect: () => {
+                client.subscribe('/topic/trucks', (message) => {
+                    const dto = JSON.parse(message.body);
 
-        stompClient.connect({}, () => {
-            stompClient.subscribe('/topic/trucks', (message) => {
-                const orderData = JSON.parse(message.body);
-                const vehicle = orderData.vehicle;
+                    setTrucks((prev) => {
+                        const existing = prev.get(dto.vehicleId);
 
-                setTrucks((prev) => {
-                    const newMap = new Map(prev);
-                    const isFinished = orderData.status === 'COMPLETED' || orderData.progress >= 1.0;
-                    const existing = newMap.get(vehicle.id);
+                        if (existing && existing.orderStatus === dto.orderStatus && dto.progress < existing.progress - 0.001) {
+                            return prev;
+                        }
 
-                    newMap.set(vehicle.id, {
-                        ...existing,
-                        id: vehicle.id,
-                        plateNumber: vehicle.plateNumber,
-                        brand: vehicle.brand,
-                        model: vehicle.model,
-                        currentLat: vehicle.currentLat,
-                        currentLng: vehicle.currentLng,
-                        status: isFinished ? 'AVAILABLE' : 'BUSY',
-                        progress: isFinished ? 0 : orderData.progress,
-                        gpsDistance: orderData.gpsDistance,
-                        driverName: existing?.driverName || 'Brak przypisania'
+                        const newMap = new Map(prev);
+                        const isFinished = dto.status === 'AVAILABLE';
+
+                        newMap.set(dto.vehicleId, {
+                            ...existing,
+                            id: dto.vehicleId,
+                            plateNumber: dto.plateNumber,
+                            brand: dto.brand,
+                            model: dto.model,
+                            currentLat: dto.currentLat,
+                            currentLng: dto.currentLng,
+                            status: dto.status,
+                            orderStatus: isFinished ? undefined : dto.orderStatus,
+                            progress: isFinished ? 0 : dto.progress,
+                            gpsDistance: dto.gpsDistance,
+                            driverName: existing?.driverName || 'Brak przypisania'
+                        });
+
+                        return newMap;
                     });
-
-                    return newMap;
                 });
-            });
 
-            stompClient.subscribe('/topic/simulation', (message) => {
-                const simState = JSON.parse(message.body);
-                setIsPlaying(simState.running);
-                setVirtualTime(simState.virtualTime);
-            });
+                client.subscribe('/topic/simulation', (message) => {
+                    const simState = JSON.parse(message.body);
+                    setIsPlaying(simState.running);
+                    setVirtualTime(simState.virtualTime);
+                });
+            }
         });
 
+        client.activate();
+
         return () => {
-            if (stompClient.connected) stompClient.disconnect();
+            client.deactivate();
         };
-    }, [refreshVehicles, refreshLocations]);
+    },[refreshVehicles, refreshLocations, refreshRoutes]);
 
     const togglePlay = async () => {
         const res = await fetch('http://localhost:8080/api/simulation/toggle', { method: 'POST' });
@@ -181,9 +202,9 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
     return (
         <SimulationContext.Provider value={{
-            trucks, locations, isPlaying, speed, virtualTime, // NOWE: udostępnienie locations
+            trucks, locations, activeRoutes, isPlaying, speed, virtualTime,
             mapCenter, mapZoom,
-            togglePlay, changeSpeed, setMapViewState, refreshVehicles, refreshLocations // NOWE: udostępnienie funkcji
+            togglePlay, changeSpeed, setMapViewState, refreshVehicles, refreshLocations, refreshRoutes
         }}>
             {children}
         </SimulationContext.Provider>

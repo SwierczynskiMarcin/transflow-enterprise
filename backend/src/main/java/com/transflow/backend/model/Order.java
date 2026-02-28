@@ -35,7 +35,19 @@ public class Order {
     private Double pricePerKm;
     private String status;
 
-    private Double startOdometer;      // Licznik wpisany przy starcie zlecenia
-    private Double gpsDistance = 0.0;  // Suma dystansu naliczonego przez GPS na tym zleceniu
-    private Double progress = 0.0;     // Postęp trasy 0.0 - 1.0
+    private Double startOdometer;
+    private Double gpsDistance = 0.0;
+    private Double progress = 0.0;
+
+    private Double startLatApproaching;
+    private Double startLngApproaching;
+    private Integer loadingTicksRemaining = 0;
+
+    @Column(columnDefinition = "TEXT")
+    private String routePolylineApproaching;
+    private Double routeDistanceApproaching;
+
+    @Column(columnDefinition = "TEXT")
+    private String routePolylineTransit;
+    private Double routeDistanceTransit;
 }

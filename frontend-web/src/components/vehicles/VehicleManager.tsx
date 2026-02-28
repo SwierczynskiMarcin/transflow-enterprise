@@ -101,7 +101,6 @@ export default function VehicleManager() {
     return (
         <div className="p-8 h-full w-full overflow-y-auto bg-slate-900 text-slate-200 relative">
 
-            {/* Nakładka wyboru z mapy */}
             {isPickerMapOpen && (
                 <CoordinatePickerMap
                     initialLat={lat}
@@ -129,7 +128,6 @@ export default function VehicleManager() {
                     <div><label className="block text-xs text-slate-400 uppercase mb-1">Spalanie (L/100km)</label><input type="number" required value={consumption} onChange={e => setConsumption(Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white outline-none focus:border-cyan-400" /></div>
                     <div><label className="block text-xs text-slate-400 uppercase mb-1">Pojemność Baku (L)</label><input type="number" required value={capacity} onChange={e => setCapacity(Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white outline-none focus:border-cyan-400" /></div>
 
-                    {/* ZMODYFIKOWANA SEKCJA LAT/LNG */}
                     <div className="flex gap-2 items-end md:col-span-3 bg-slate-900/50 p-3 rounded-xl border border-slate-700">
                         <div className="flex-1">
                             <label className="block text-xs text-slate-400 uppercase mb-1">Start Lat</label>
@@ -139,7 +137,6 @@ export default function VehicleManager() {
                             <label className="block text-xs text-slate-400 uppercase mb-1">Start Lng</label>
                             <input type="number" step="0.000001" required value={lng} onChange={e => setLng(Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white outline-none focus:border-cyan-400" disabled={!!editingId} />
                         </div>
-                        {/* PRZYCISK "WYBIERZ Z MAPY" */}
                         {!editingId && (
                             <button
                                 type="button"

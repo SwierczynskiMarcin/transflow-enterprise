@@ -51,7 +51,6 @@ export default function DriverManager() {
         if (res.ok) { resetForm(); await loadData(); await refreshVehicles(); }
     };
 
-    // Pokaż wolne auta ORAZ auto aktualnie przypisane do edytowanego kierowcy
     const availableVehicles = vehicles.filter(v =>
         !drivers.some(d => d.assignedVehicle?.id === v.id && d.id !== editingId)
     );

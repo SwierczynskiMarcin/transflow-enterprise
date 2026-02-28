@@ -1,5 +1,7 @@
 package com.transflow.backend.service;
 
+import com.transflow.backend.dto.ActiveRouteDTO;
+import com.transflow.backend.dto.OrderCreateRequest;
 import com.transflow.backend.model.Order;
 import com.transflow.backend.model.Vehicle;
 import com.transflow.backend.model.Location;
@@ -13,6 +15,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -24,18 +27,18 @@ public class OrderService {
     private final DriverRepository driverRepository;
 
     @Transactional
-    public Order createOrder(Long vehicleId, Long startLocationId, Long endLocationId) {
-        Vehicle vehicle = vehicleRepository.findById(vehicleId)
-                .orElseThrow(() -> new RuntimeException("Nie znaleziono pojazdu z ID: " + vehicleId));
+    public Order createOrder(OrderCreateRequest request) {
+        Vehicle vehicle = vehicleRepository.findById(request.getVehicleId())
+                .orElseThrow(() -> new RuntimeException("Nie znaleziono pojazdu"));
 
-        Location startLoc = locationRepository.findById(startLocationId)
+        Location startLoc = locationRepository.findById(request.getStartLocationId())
                 .orElseThrow(() -> new RuntimeException("Nie znaleziono lokalizacji początkowej"));
 
-        Location endLoc = locationRepository.findById(endLocationId)
+        Location endLoc = locationRepository.findById(request.getEndLocationId())
                 .orElseThrow(() -> new RuntimeException("Nie znaleziono lokalizacji końcowej"));
 
         Driver assignedDriver = driverRepository.findAll().stream()
-                .filter(d -> d.getAssignedVehicle() != null && d.getAssignedVehicle().getId().equals(vehicleId))
+                .filter(d -> d.getAssignedVehicle() != null && d.getAssignedVehicle().getId().equals(vehicle.getId()))
                 .findFirst()
                 .orElse(null);
 
@@ -49,6 +52,15 @@ public class OrderService {
         order.setProgress(0.0);
         order.setGpsDistance(0.0);
 
+        order.setStartLatApproaching(vehicle.getCurrentLat() != null ? vehicle.getCurrentLat() : 52.0);
+        order.setStartLngApproaching(vehicle.getCurrentLng() != null ? vehicle.getCurrentLng() : 19.0);
+        order.setLoadingTicksRemaining(5);
+
+        order.setRoutePolylineApproaching(request.getRoutePolylineApproaching());
+        order.setRouteDistanceApproaching(request.getRouteDistanceApproaching());
+        order.setRoutePolylineTransit(request.getRoutePolylineTransit());
+        order.setRouteDistanceTransit(request.getRouteDistanceTransit());
+
         vehicle.setStatus("BUSY");
         vehicleRepository.save(vehicle);
 
@@ -57,5 +69,17 @@ public class OrderService {
 
     public List<Order> getAllOrders() {
         return orderRepository.findAll();
+    }
+
+    public List<ActiveRouteDTO> getActiveRoutes() {
+        return orderRepository.findAll().stream()
+                .filter(o -> List.of("APPROACHING", "LOADING", "IN_TRANSIT").contains(o.getStatus()))
+                .map(o -> new ActiveRouteDTO(
+                        o.getVehicle().getId(),
+                        o.getRoutePolylineApproaching(),
+                        o.getRoutePolylineTransit(),
+                        o.getStatus()
+                ))
+                .collect(Collectors.toList());
     }
 }

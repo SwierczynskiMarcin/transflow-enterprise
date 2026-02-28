@@ -15,7 +15,7 @@ public class FuelLogService {
 
     private final FuelLogRepository fuelLogRepository;
     private final OrderRepository orderRepository;
-    private final VehicleRepository vehicleRepository; // Dodane repozytorium pojazdów
+    private final VehicleRepository vehicleRepository;
 
     public FuelLog addFuelLog(FuelLog fuelLog) {
         Order order = orderRepository.findById(fuelLog.getOrder().getId())

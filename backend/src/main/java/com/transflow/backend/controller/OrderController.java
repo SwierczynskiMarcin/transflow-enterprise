@@ -1,5 +1,6 @@
 package com.transflow.backend.controller;
 
+import com.transflow.backend.dto.ActiveRouteDTO;
 import com.transflow.backend.dto.OrderCreateRequest;
 import com.transflow.backend.model.Order;
 import com.transflow.backend.service.OrderService;
@@ -19,16 +20,17 @@ public class OrderController {
 
     @PostMapping
     public ResponseEntity<Order> createOrder(@RequestBody OrderCreateRequest request) {
-        Order newOrder = orderService.createOrder(
-                request.getVehicleId(),
-                request.getStartLocationId(),
-                request.getEndLocationId()
-        );
+        Order newOrder = orderService.createOrder(request);
         return ResponseEntity.ok(newOrder);
     }
 
     @GetMapping
     public ResponseEntity<List<Order>> getAllOrders() {
         return ResponseEntity.ok(orderService.getAllOrders());
+    }
+
+    @GetMapping("/active-routes")
+    public ResponseEntity<List<ActiveRouteDTO>> getActiveRoutes() {
+        return ResponseEntity.ok(orderService.getActiveRoutes());
     }
 }
