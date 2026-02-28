@@ -4,6 +4,7 @@ import com.transflow.backend.model.Vehicle;
 import com.transflow.backend.repository.VehicleRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -15,6 +16,7 @@ import java.util.List;
 public class VehicleController {
 
     private final VehicleRepository vehicleRepository;
+    private final SimpMessagingTemplate messagingTemplate;
 
     @GetMapping
     public List<Vehicle> getAllVehicles() {
@@ -25,7 +27,9 @@ public class VehicleController {
     public Vehicle addVehicle(@RequestBody Vehicle vehicle) {
         if (vehicle.getStatus() == null) vehicle.setStatus("AVAILABLE");
         if (vehicle.getCurrentOdometer() == null) vehicle.setCurrentOdometer(0.0);
-        return vehicleRepository.save(vehicle);
+        Vehicle saved = vehicleRepository.save(vehicle);
+        messagingTemplate.convertAndSend("/topic/updates", "VEHICLES");
+        return saved;
     }
 
     @PutMapping("/{id}")
@@ -40,7 +44,9 @@ public class VehicleController {
                 vehicle.setCurrentLat(updatedDetails.getCurrentLat());
                 vehicle.setCurrentLng(updatedDetails.getCurrentLng());
             }
-            return ResponseEntity.ok(vehicleRepository.save(vehicle));
+            Vehicle saved = vehicleRepository.save(vehicle);
+            messagingTemplate.convertAndSend("/topic/updates", "VEHICLES");
+            return ResponseEntity.ok(saved);
         }).orElse(ResponseEntity.notFound().build());
     }
 
@@ -51,6 +57,8 @@ public class VehicleController {
                 return ResponseEntity.badRequest().body("Nie można usunąć pojazdu, który jest w trasie.");
             }
             vehicleRepository.delete(vehicle);
+            messagingTemplate.convertAndSend("/topic/updates", "VEHICLES");
+            messagingTemplate.convertAndSend("/topic/updates", "DRIVERS");
             return ResponseEntity.ok().build();
         }).orElse(ResponseEntity.notFound().build());
     }

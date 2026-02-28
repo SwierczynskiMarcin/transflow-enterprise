@@ -33,34 +33,49 @@ export interface LocationData {
     address: string;
 }
 
+export interface OrderData {
+    id: number;
+    startLocation: LocationData;
+    endLocation: LocationData;
+    vehicle: VehicleData;
+    driver: { firstName: string, lastName: string } | null;
+    cargoWeight: number;
+    pricePerKm: number;
+    status: string;
+    progress: number;
+}
+
 interface SimulationContextProps {
     trucks: Map<number, VehicleData>;
     locations: LocationData[];
     activeRoutes: Map<number, ActiveRoute>;
+    orders: OrderData[];
     isPlaying: boolean;
     speed: number;
     virtualTime: string | null;
-    mapCenter: [number, number];
+    mapCenter:[number, number];
     mapZoom: number;
     togglePlay: () => Promise<void>;
     changeSpeed: (newSpeed: number) => Promise<void>;
-    setMapViewState: (center: [number, number], zoom: number) => void;
+    setMapViewState: (center:[number, number], zoom: number) => void;
     refreshVehicles: () => Promise<void>;
     refreshLocations: () => Promise<void>;
     refreshRoutes: () => Promise<void>;
+    refreshOrders: () => Promise<void>;
 }
 
 const SimulationContext = createContext<SimulationContextProps | undefined>(undefined);
 
 export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-    const[trucks, setTrucks] = useState<Map<number, VehicleData>>(new Map());
-    const [locations, setLocations] = useState<LocationData[]>([]);
+    const [trucks, setTrucks] = useState<Map<number, VehicleData>>(new Map());
+    const[locations, setLocations] = useState<LocationData[]>([]);
     const [activeRoutes, setActiveRoutes] = useState<Map<number, ActiveRoute>>(new Map());
+    const [orders, setOrders] = useState<OrderData[]>([]);
     const [isPlaying, setIsPlaying] = useState(true);
-    const [speed, setSpeed] = useState(60);
+    const[speed, setSpeed] = useState(60);
     const [virtualTime, setVirtualTime] = useState<string | null>(null);
     const [mapCenter, setMapCenter] = useState<[number, number]>([52.0, 19.0]);
-    const[mapZoom, setMapZoom] = useState<number>(6);
+    const [mapZoom, setMapZoom] = useState<number>(6);
 
     const refreshLocations = useCallback(async () => {
         try {
@@ -76,6 +91,13 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
             const routeMap = new Map();
             data.forEach(r => routeMap.set(r.vehicleId, r));
             setActiveRoutes(routeMap);
+        } catch (err) {}
+    },[]);
+
+    const refreshOrders = useCallback(async () => {
+        try {
+            const res = await fetch('http://localhost:8080/api/orders');
+            setOrders(await res.json());
         } catch (err) {}
     },[]);
 
@@ -132,6 +154,7 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         refreshVehicles();
         refreshLocations();
         refreshRoutes();
+        refreshOrders();
 
         const client = new Client({
             webSocketFactory: () => new SockJS('http://localhost:8080/ws-trucks'),
@@ -174,6 +197,16 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
                     setIsPlaying(simState.running);
                     setVirtualTime(simState.virtualTime);
                 });
+
+                client.subscribe('/topic/updates', (message) => {
+                    const type = message.body;
+                    if (type === 'LOCATIONS') refreshLocations();
+                    if (type === 'VEHICLES' || type === 'DRIVERS') refreshVehicles();
+                    if (type === 'ORDERS') {
+                        refreshRoutes();
+                        refreshOrders();
+                    }
+                });
             }
         });
 
@@ -182,7 +215,7 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         return () => {
             client.deactivate();
         };
-    },[refreshVehicles, refreshLocations, refreshRoutes]);
+    },[refreshVehicles, refreshLocations, refreshRoutes, refreshOrders]);
 
     const togglePlay = async () => {
         const res = await fetch('http://localhost:8080/api/simulation/toggle', { method: 'POST' });
@@ -195,16 +228,16 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         await fetch(`http://localhost:8080/api/simulation/speed?multiplier=${newSpeed}`, { method: 'POST' });
     };
 
-    const setMapViewState = (center: [number, number], zoom: number) => {
+    const setMapViewState = (center:[number, number], zoom: number) => {
         setMapCenter(center);
         setMapZoom(zoom);
     };
 
     return (
         <SimulationContext.Provider value={{
-            trucks, locations, activeRoutes, isPlaying, speed, virtualTime,
+            trucks, locations, activeRoutes, orders, isPlaying, speed, virtualTime,
             mapCenter, mapZoom,
-            togglePlay, changeSpeed, setMapViewState, refreshVehicles, refreshLocations, refreshRoutes
+            togglePlay, changeSpeed, setMapViewState, refreshVehicles, refreshLocations, refreshRoutes, refreshOrders
         }}>
             {children}
         </SimulationContext.Provider>

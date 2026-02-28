@@ -40,7 +40,7 @@ public class OrderService {
         Driver assignedDriver = driverRepository.findAll().stream()
                 .filter(d -> d.getAssignedVehicle() != null && d.getAssignedVehicle().getId().equals(vehicle.getId()))
                 .findFirst()
-                .orElse(null);
+                .orElseThrow(() -> new IllegalArgumentException("Pojazd nie posiada przypisanego kierowcy. Przypisz kierowcę przed wysłaniem w trasę."));
 
         Order order = new Order();
         order.setVehicle(vehicle);
@@ -62,7 +62,10 @@ public class OrderService {
         order.setRouteDistanceTransit(request.getRouteDistanceTransit());
 
         vehicle.setStatus("BUSY");
+        assignedDriver.setStatus("BUSY");
+
         vehicleRepository.save(vehicle);
+        driverRepository.save(assignedDriver);
 
         return orderRepository.save(order);
     }

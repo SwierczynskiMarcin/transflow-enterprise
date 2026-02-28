@@ -1,22 +1,26 @@
-import React, { useState, useEffect } from 'react';
-import { Truck, Plus, Trash2, Edit2, X, User, Map as MapIcon } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Truck, Plus, Trash2, Edit2, X, User, Map as MapIcon, MapPin } from 'lucide-react';
 import { useSimulation } from '../../context/SimulationContext';
 import CoordinatePickerMap from '../locations/CoordinatePickerMap';
 
-interface VehicleDB {
-    id: number; plateNumber: string; brand: string; model: string;
-    baseFuelConsumption: number; fuelCapacity: number; status: string;
-    currentLat: number; currentLng: number;
-    driverName?: string;
-}
+const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+    const R = 6371;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+        Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+        Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return R * c;
+};
 
 export default function VehicleManager() {
-    const { refreshVehicles } = useSimulation();
-    const [vehicles, setVehicles] = useState<VehicleDB[]>([]);
-    const [isFormOpen, setIsFormOpen] = useState(false);
-    const [editingId, setEditingId] = useState<number | null>(null);
+    const { trucks, locations, orders } = useSimulation();
+    const [vehiclesData, setVehiclesData] = useState<any[]>([]);
 
-    const [isPickerMapOpen, setIsPickerMapOpen] = useState(false);
+    const [isFormOpen, setIsFormOpen] = useState(false);
+    const[editingId, setEditingId] = useState<number | null>(null);
+    const[isPickerMapOpen, setIsPickerMapOpen] = useState(false);
 
     const [plate, setPlate] = useState('');
     const [brand, setBrand] = useState('');
@@ -26,31 +30,27 @@ export default function VehicleManager() {
     const [lat, setLat] = useState(52.2297);
     const [lng, setLng] = useState(21.0122);
 
-    const loadVehicles = async () => {
-        const [vehRes, drvRes] = await Promise.all([
-            fetch('http://localhost:8080/api/vehicles'),
-            fetch('http://localhost:8080/api/drivers')
-        ]);
+    useEffect(() => {
+        const fetchDBData = async () => {
+            const res = await fetch('http://localhost:8080/api/vehicles');
+            setVehiclesData(await res.json());
+        };
+        fetchDBData();
+    }, [trucks]);
 
-        const vehiclesData = await vehRes.json();
-        const driversData = await drvRes.json();
+    const sortedVehicles = useMemo(() => {
+        return [...vehiclesData].sort((a, b) => {
+            const liveA = trucks.get(a.id);
+            const liveB = trucks.get(b.id);
+            const statusA = liveA ? liveA.status : a.status;
+            const statusB = liveB ? liveB.status : b.status;
 
-        const driverMap = new Map();
-        driversData.forEach((d: any) => {
-            if (d.assignedVehicle) {
-                driverMap.set(d.assignedVehicle.id, `${d.firstName} ${d.lastName}`);
-            }
+            if (statusA === 'BUSY' && statusB !== 'BUSY') return -1;
+            if (statusA !== 'BUSY' && statusB === 'BUSY') return 1;
+
+            return a.plateNumber.localeCompare(b.plateNumber);
         });
-
-        const mergedVehicles = vehiclesData.map((v: any) => ({
-            ...v,
-            driverName: driverMap.get(v.id) || null
-        }));
-
-        setVehicles(mergedVehicles);
-    };
-
-    useEffect(() => { loadVehicles(); }, []);
+    }, [vehiclesData, trucks]);
 
     const resetForm = () => {
         setPlate(''); setBrand(''); setModel(''); setConsumption(25); setCapacity(600); setLat(52.2297); setLng(21.0122);
@@ -59,7 +59,7 @@ export default function VehicleManager() {
         setIsPickerMapOpen(false);
     };
 
-    const handleEditClick = (v: VehicleDB) => {
+    const handleEditClick = (v: any) => {
         setPlate(v.plateNumber); setBrand(v.brand); setModel(v.model);
         setConsumption(v.baseFuelConsumption); setCapacity(v.fuelCapacity);
         setLat(v.currentLat); setLng(v.currentLng);
@@ -70,8 +70,7 @@ export default function VehicleManager() {
     const handleDelete = async (id: number) => {
         if (!confirm('Czy na pewno chcesz usunąć ten pojazd?')) return;
         const res = await fetch(`http://localhost:8080/api/vehicles/${id}`, { method: 'DELETE' });
-        if (res.ok) { await loadVehicles(); await refreshVehicles(); }
-        else alert('Nie można usunąć pojazdu. Prawdopodobnie jest w trasie.');
+        if (!res.ok) alert('Nie można usunąć pojazdu. Prawdopodobnie jest w trasie.');
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -87,15 +86,42 @@ export default function VehicleManager() {
 
         if (res.ok) {
             resetForm();
-            await loadVehicles();
-            await refreshVehicles();
         }
     };
 
-    const handleLocationPicked = (pickedLat: number, pickedLng: number) => {
-        setLat(pickedLat);
-        setLng(pickedLng);
-        setIsPickerMapOpen(false);
+    const resolveCurrentLocationText = (vehicleId: number, dbLat: number, dbLng: number) => {
+        const liveTruck = trucks.get(vehicleId);
+        if (!liveTruck) return <span className="text-slate-500 italic">Ładowanie...</span>;
+
+        if (liveTruck.status === 'BUSY') {
+            const activeOrder = orders.find(o => o.vehicle.id === vehicleId && ['APPROACHING', 'LOADING', 'IN_TRANSIT'].includes(o.status));
+            if (activeOrder) {
+                return (
+                    <span className="flex items-center gap-1 text-cyan-400 font-medium">
+                        <Truck size={14} /> W trasie do: {activeOrder.endLocation.name}
+                    </span>
+                );
+            }
+            return <span className="text-cyan-400">W trasie</span>;
+        } else {
+            let closestLoc = null;
+            let minD = Infinity;
+            for (const loc of locations) {
+                const d = calculateDistance(liveTruck.currentLat, liveTruck.currentLng, loc.latitude, loc.longitude);
+                if (d < 0.5 && d < minD) {
+                    minD = d;
+                    closestLoc = loc;
+                }
+            }
+            if (closestLoc) {
+                return (
+                    <span className="flex items-center gap-1 text-emerald-400 font-medium">
+                        <MapPin size={14} /> Na bazie: {closestLoc.name}
+                    </span>
+                );
+            }
+            return <span className="text-slate-400">Postój na trasie</span>;
+        }
     };
 
     return (
@@ -105,7 +131,7 @@ export default function VehicleManager() {
                 <CoordinatePickerMap
                     initialLat={lat}
                     initialLng={lng}
-                    onSave={handleLocationPicked}
+                    onSave={(pLat, pLng) => { setLat(pLat); setLng(pLng); setIsPickerMapOpen(false); }}
                     onCancel={() => setIsPickerMapOpen(false)}
                 />
             )}
@@ -165,36 +191,37 @@ export default function VehicleManager() {
                         <th className="p-4 border-b border-slate-700">Rejestracja</th>
                         <th className="p-4 border-b border-slate-700">Pojazd</th>
                         <th className="p-4 border-b border-slate-700">Kierowca</th>
-                        <th className="p-4 border-b border-slate-700">Status</th>
+                        <th className="p-4 border-b border-slate-700">Aktualne Położenie</th>
                         <th className="p-4 border-b border-slate-700 text-right">Akcje</th>
                     </tr>
                     </thead>
                     <tbody>
-                    {vehicles.map(v => (
-                        <tr key={v.id} className="hover:bg-slate-700/50 border-b border-slate-700/50">
-                            <td className="p-4 font-bold text-white">{v.plateNumber}</td>
-                            <td className="p-4">{v.brand} {v.model}</td>
-                            <td className="p-4">
-                                {v.driverName ? (
-                                    <span className="flex items-center gap-2 text-slate-300">
+                    {sortedVehicles.map(v => {
+                        const liveData = trucks.get(v.id);
+                        return (
+                            <tr key={v.id} className="hover:bg-slate-700/50 border-b border-slate-700/50 transition-colors duration-300">
+                                <td className="p-4 font-bold text-white">{v.plateNumber}</td>
+                                <td className="p-4">{v.brand} {v.model}</td>
+                                <td className="p-4">
+                                    {liveData && liveData.driverName && liveData.driverName !== 'Brak przypisania' ? (
+                                        <span className="flex items-center gap-2 text-slate-300">
                                             <User size={14} className="text-slate-500" />
-                                        {v.driverName}
+                                            {liveData.driverName}
                                         </span>
-                                ) : (
-                                    <span className="text-slate-500 italic">Brak kierowcy</span>
-                                )}
-                            </td>
-                            <td className="p-4">
-                                    <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${v.status === 'BUSY' ? 'bg-cyan-500/20 text-cyan-400' : 'bg-emerald-500/20 text-emerald-400'}`}>
-                                        {v.status === 'BUSY' ? 'W trasie' : 'Dostępny'}
-                                    </span>
-                            </td>
-                            <td className="p-4 flex justify-end gap-2">
-                                <button onClick={() => handleEditClick(v)} className="p-2 bg-blue-500/10 text-blue-400 hover:bg-blue-500 hover:text-white rounded-lg transition" title="Edytuj"><Edit2 size={18} /></button>
-                                <button onClick={() => handleDelete(v.id)} className="p-2 bg-rose-500/10 text-rose-400 hover:bg-rose-500 hover:text-white rounded-lg transition" title="Usuń"><Trash2 size={18} /></button>
-                            </td>
-                        </tr>
-                    ))}
+                                    ) : (
+                                        <span className="text-slate-500 italic">Brak kierowcy</span>
+                                    )}
+                                </td>
+                                <td className="p-4 text-sm">
+                                    {resolveCurrentLocationText(v.id, v.currentLat, v.currentLng)}
+                                </td>
+                                <td className="p-4 flex justify-end gap-2">
+                                    <button onClick={() => handleEditClick(v)} className="p-2 bg-blue-500/10 text-blue-400 hover:bg-blue-500 hover:text-white rounded-lg transition" title="Edytuj"><Edit2 size={18} /></button>
+                                    <button onClick={() => handleDelete(v.id)} className="p-2 bg-rose-500/10 text-rose-400 hover:bg-rose-500 hover:text-white rounded-lg transition" title="Usuń"><Trash2 size={18} /></button>
+                                </td>
+                            </tr>
+                        );
+                    })}
                     </tbody>
                 </table>
             </div>

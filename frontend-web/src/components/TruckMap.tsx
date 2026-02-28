@@ -2,12 +2,12 @@ import { useState, useEffect, useMemo } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline } from 'react-leaflet';
 import L from 'leaflet';
 import { renderToString } from 'react-dom/server';
-import { Truck, Activity, Building2, MapPin, Flag, X, Route, Loader2 } from 'lucide-react';
+import { Truck, Activity, Building2, MapPin, Flag, X, Route, Loader2, AlertTriangle } from 'lucide-react';
 import SimulationControls from './map/SimulationControls';
 import MapResizer from './map/MapResizer';
 import { useSimulation, type LocationData, type VehicleData } from '../context/SimulationContext';
 
-const decodePolyline = (str: string, precision = 5): [number, number][] => {
+const decodePolyline = (str: string, precision = 5):[number, number][] => {
     if (!str) return[];
     let index = 0, lat = 0, lng = 0, coordinates: [number, number][] =[], shift = 0, result = 0, byte = null;
     const factor = Math.pow(10, precision);
@@ -28,10 +28,10 @@ const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: numbe
     const R = 6371;
     const dLat = (lat2 - lat1) * Math.PI / 180;
     const dLon = (lon2 - lon1) * Math.PI / 180;
-    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
         Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-        Math.sin(dLon/2) * Math.sin(dLon/2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     return R * c;
 };
 
@@ -46,7 +46,7 @@ const createTruckIcon = (colorClass: string, glowColor: string) => {
             <Truck size={20} className={colorClass.replace('border-', 'text-')} />
         </div>
     );
-    return L.divIcon({ className: 'bg-transparent border-none', html: htmlString, iconSize:[40, 40], iconAnchor: [20, 20], popupAnchor:[0, -20] });
+    return L.divIcon({ className: 'bg-transparent border-none', html: htmlString, iconSize: [40, 40], iconAnchor: [20, 20], popupAnchor: [0, -20] });
 };
 
 const busyIcon = createTruckIcon('border-cyan-400', 'rgba(34,211,238,0.5)');
@@ -75,7 +75,7 @@ const createLocationIcon = (type: string, truckCount: number, hasBusyTrucks: boo
             )}
         </div>
     );
-    return L.divIcon({ className: 'bg-transparent border-none', html: htmlString, iconSize:[40, 40], iconAnchor: [20, 20], popupAnchor: [0, -20] });
+    return L.divIcon({ className: 'bg-transparent border-none', html: htmlString, iconSize:[40, 40], iconAnchor: [20, 20], popupAnchor:[0, -20] });
 };
 
 export default function TruckMap() {
@@ -83,8 +83,9 @@ export default function TruckMap() {
     const activeTrucks = Array.from(trucks.values()).filter(t => t.status === 'BUSY');
     const availableTrucks = Array.from(trucks.values()).filter(t => t.status === 'AVAILABLE');
 
-    const[isBuilderOpen, setIsBuilderOpen] = useState(false);
-    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [isBuilderOpen, setIsBuilderOpen] = useState(false);
+    const[isSubmitting, setIsSubmitting] = useState(false);
+    const [isFetchingRoute, setIsFetchingRoute] = useState(false);
     const [startLoc, setStartLoc] = useState<LocationData | null>(null);
     const [endLoc, setEndLoc] = useState<LocationData | null>(null);
     const[selectedTruckId, setSelectedTruckId] = useState<number | ''>('');
@@ -129,6 +130,8 @@ export default function TruckMap() {
     const selectedTruckData = selectedTruckId ? availableTrucks.find(t => t.id === selectedTruckId) : null;
     const selectedDistance = selectedTruckData && startLoc ? calculateDistance(startLoc.latitude, startLoc.longitude, selectedTruckData.currentLat, selectedTruckData.currentLng) : 0;
 
+    const hasAssignedDriver = selectedTruckData?.driverName && selectedTruckData.driverName !== 'Brak przypisania';
+
     const startLocId = startLoc?.id;
     const endLocId = endLoc?.id;
     const selectedTruckIdStr = selectedTruckId.toString();
@@ -138,26 +141,48 @@ export default function TruckMap() {
             const truck = Array.from(trucks.values()).find(t => t.id.toString() === selectedTruckIdStr);
             if (!truck) return;
 
+            const abortController = new AbortController();
+            setIsFetchingRoute(true);
+
+            setPreviewRoute1([]);
+            setPreviewRoute2([]);
+            setPreviewPoly1Str("");
+            setPreviewPoly2Str("");
+            setPreviewDist1(0);
+            setPreviewDist2(0);
+
             const fetchPreviews = async () => {
                 try {
-                    const r1 = await fetch(`http://router.project-osrm.org/route/v1/driving/${truck.currentLng},${truck.currentLat};${startLoc!.longitude},${startLoc!.latitude}?overview=full&geometries=polyline`);
+                    const r1 = await fetch(`http://router.project-osrm.org/route/v1/driving/${truck.currentLng},${truck.currentLat};${startLoc!.longitude},${startLoc!.latitude}?overview=full&geometries=polyline`, { signal: abortController.signal });
                     const d1 = await r1.json();
-                    if(d1.routes?.[0]) {
+                    if (d1.routes?.[0]) {
                         setPreviewPoly1Str(d1.routes[0].geometry);
                         setPreviewDist1(d1.routes[0].distance);
                         setPreviewRoute1(decodePolyline(d1.routes[0].geometry));
                     }
 
-                    const r2 = await fetch(`http://router.project-osrm.org/route/v1/driving/${startLoc!.longitude},${startLoc!.latitude};${endLoc!.longitude},${endLoc!.latitude}?overview=full&geometries=polyline`);
+                    const r2 = await fetch(`http://router.project-osrm.org/route/v1/driving/${startLoc!.longitude},${startLoc!.latitude};${endLoc!.longitude},${endLoc!.latitude}?overview=full&geometries=polyline`, { signal: abortController.signal });
                     const d2 = await r2.json();
-                    if(d2.routes?.[0]) {
+                    if (d2.routes?.[0]) {
                         setPreviewPoly2Str(d2.routes[0].geometry);
                         setPreviewDist2(d2.routes[0].distance);
                         setPreviewRoute2(decodePolyline(d2.routes[0].geometry));
                     }
-                } catch(e) {}
+                } catch (e: any) {
+                    if (e.name !== 'AbortError') {
+                        setIsFetchingRoute(false);
+                    }
+                } finally {
+                    if (!abortController.signal.aborted) {
+                        setIsFetchingRoute(false);
+                    }
+                }
             };
             fetchPreviews();
+
+            return () => {
+                abortController.abort();
+            };
         } else {
             setPreviewRoute1([]);
             setPreviewRoute2([]);
@@ -165,6 +190,7 @@ export default function TruckMap() {
             setPreviewPoly2Str("");
             setPreviewDist1(0);
             setPreviewDist2(0);
+            setIsFetchingRoute(false);
         }
     },[startLocId, endLocId, selectedTruckIdStr]);
 
@@ -198,10 +224,11 @@ export default function TruckMap() {
         setSelectedTruckId('');
         setPreviewRoute1([]);
         setPreviewRoute2([]);
+        setIsFetchingRoute(false);
     };
 
     const handleConfirmOrder = async () => {
-        if (!startLoc || !endLoc || !selectedTruckId) return;
+        if (!startLoc || !endLoc || !selectedTruckId || isFetchingRoute || !previewPoly1Str || !previewPoly2Str || !hasAssignedDriver) return;
         setIsSubmitting(true);
 
         try {
@@ -220,7 +247,6 @@ export default function TruckMap() {
             });
 
             if (response.ok) {
-                await refreshRoutes();
                 handleCancelOrder();
             }
         } catch (error) {
@@ -228,6 +254,8 @@ export default function TruckMap() {
             setIsSubmitting(false);
         }
     };
+
+    const isReadyToSubmit = startLoc && endLoc && selectedTruckId && !isSubmitting && !isFetchingRoute && previewPoly1Str && previewPoly2Str && hasAssignedDriver;
 
     return (
         <div className="absolute inset-0 z-0">
@@ -252,21 +280,21 @@ export default function TruckMap() {
 
                     return (
                         <div key={`route-${truck.id}`}>
-                            {isApproaching && poly1.length > 0 && (
-                                <Polyline positions={poly1} color="#fbbf24" weight={4} opacity={0.6} />
-                            )}
                             {poly2.length > 0 && (
-                                <Polyline positions={poly2} color="#22d3ee" weight={5} opacity={isApproaching ? 0.3 : 0.8} />
+                                <Polyline positions={poly2} color="#3b82f6" weight={6} opacity={isApproaching ? 0.3 : 0.8} />
+                            )}
+                            {isApproaching && poly1.length > 0 && (
+                                <Polyline positions={poly1} color="#fbbf24" weight={4} dashArray="10, 10" opacity={0.9} />
                             )}
                         </div>
                     );
                 })}
 
-                {previewRoute1.length > 0 && (
-                    <Polyline positions={previewRoute1} color="#fbbf24" weight={4} dashArray="8, 8" opacity={0.8} />
-                )}
                 {previewRoute2.length > 0 && (
-                    <Polyline positions={previewRoute2} color="#22d3ee" weight={4} dashArray="8, 8" opacity={0.8} />
+                    <Polyline positions={previewRoute2} color="#3b82f6" weight={5} dashArray="10, 10" opacity={0.8} />
+                )}
+                {previewRoute1.length > 0 && (
+                    <Polyline positions={previewRoute1} color="#fbbf24" weight={4} dashArray="10, 10" opacity={0.8} />
                 )}
 
                 {locations.map(loc => {
@@ -290,20 +318,19 @@ export default function TruckMap() {
                                     </span>
 
                                     <div className="mb-3">
-                                        <span className={`text-[10px] font-bold px-2 py-1 rounded-full uppercase ${
-                                            loc.type === 'BASE' ? 'bg-blue-100 text-blue-800' :
-                                                loc.type === 'PORT' ? 'bg-indigo-100 text-indigo-800' :
-                                                    'bg-rose-100 text-rose-800'
+                                        <span className={`text-[10px] font-bold px-2 py-1 rounded-full uppercase ${loc.type === 'BASE' ? 'bg-blue-100 text-blue-800' :
+                                            loc.type === 'PORT' ? 'bg-indigo-100 text-indigo-800' :
+                                                'bg-rose-100 text-rose-800'
                                         }`}>
                                             {loc.type === 'BASE' ? 'Baza Floty' : loc.type === 'PORT' ? 'Terminal' : 'Magazyn'}
                                         </span>
                                     </div>
 
                                     <div className="flex gap-2 mt-2 mb-3">
-                                        <button onClick={() => handleSetStart(loc)} className="flex-1 flex items-center justify-center gap-1.5 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-700 text-xs py-2 rounded-lg font-bold transition-colors">
+                                        <button onClick={() => { handleSetStart(loc); }} className="flex-1 flex items-center justify-center gap-1.5 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-700 text-xs py-2 rounded-lg font-bold transition-colors">
                                             <MapPin size={14} /> STĄD
                                         </button>
-                                        <button onClick={() => handleSetEnd(loc)} className="flex-1 flex items-center justify-center gap-1.5 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 text-xs py-2 rounded-lg font-bold transition-colors">
+                                        <button onClick={() => { handleSetEnd(loc); }} className="flex-1 flex items-center justify-center gap-1.5 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 text-xs py-2 rounded-lg font-bold transition-colors">
                                             <Flag size={14} /> TUTAJ
                                         </button>
                                     </div>
@@ -331,10 +358,9 @@ export default function TruckMap() {
                                                                 <span className="text-[9px] text-slate-500 leading-none mt-1">{t.brand}</span>
                                                             </div>
                                                         </div>
-                                                        <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded ${
-                                                            t.status === 'AVAILABLE' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' :
-                                                                t.orderStatus === 'APPROACHING' ? 'bg-amber-50 text-amber-600 border border-amber-100' :
-                                                                    'bg-cyan-50 text-cyan-600 border border-cyan-100'
+                                                        <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded ${t.status === 'AVAILABLE' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' :
+                                                            t.orderStatus === 'APPROACHING' ? 'bg-amber-50 text-amber-600 border border-amber-100' :
+                                                                'bg-cyan-50 text-cyan-600 border border-cyan-100'
                                                         }`}>
                                                             {t.orderStatus === 'APPROACHING' ? 'Dojazd' :
                                                                 t.orderStatus === 'LOADING' ? 'Załadunek' :
@@ -365,14 +391,13 @@ export default function TruckMap() {
                                         {truck.brand} {truck.model}
                                     </strong>
                                     <span className="text-sm leading-tight text-slate-600 block mb-2">
-                                        Rej: <strong className="text-slate-800">{truck.plateNumber}</strong><br/>
+                                        Rej: <strong className="text-slate-800">{truck.plateNumber}</strong><br />
                                         Kierowca: <strong className="text-slate-800">{truck.driverName}</strong>
                                     </span>
 
                                     {truck.status === 'BUSY' ? (
-                                        <span className={`text-xs font-bold px-2 py-1 rounded-full uppercase ${
-                                            truck.orderStatus === 'APPROACHING' ? 'bg-amber-100 text-amber-800' :
-                                                truck.orderStatus === 'LOADING' ? 'bg-blue-100 text-blue-800' : 'bg-cyan-100 text-cyan-800'
+                                        <span className={`text-xs font-bold px-2 py-1 rounded-full uppercase ${truck.orderStatus === 'APPROACHING' ? 'bg-amber-100 text-amber-800' :
+                                            truck.orderStatus === 'LOADING' ? 'bg-blue-100 text-blue-800' : 'bg-cyan-100 text-cyan-800'
                                         }`}>
                                             {truck.orderStatus === 'APPROACHING' ? 'Dojazd: ' :
                                                 truck.orderStatus === 'LOADING' ? 'Załadunek...' : 'W trasie: '}
@@ -428,6 +453,12 @@ export default function TruckMap() {
                                             return <option key={t.id} value={t.id}>{t.plateNumber} ({dist.toFixed(0)} km stąd)</option>;
                                         })}
                                     </select>
+                                    {!hasAssignedDriver && (
+                                        <div className="flex items-start gap-2 bg-rose-500/10 border border-rose-500/30 p-2 rounded mt-2">
+                                            <AlertTriangle size={14} className="text-rose-400 mt-0.5 flex-shrink-0" />
+                                            <span className="text-[10px] text-rose-300 leading-tight">Brak kierowcy. Pojazd jest niedostępny operacyjnie.</span>
+                                        </div>
+                                    )}
                                 </div>
                             ) : (
                                 <span className="text-xs text-rose-500 font-medium">Brak wolnych pojazdów w systemie.</span>
@@ -436,14 +467,23 @@ export default function TruckMap() {
 
                         <button
                             onClick={handleConfirmOrder}
-                            disabled={!startLoc || !endLoc || !selectedTruckId || isSubmitting}
+                            disabled={!isReadyToSubmit}
                             className={`w-full py-3 rounded-lg font-bold mt-2 transition-all flex items-center justify-center gap-2 ${
-                                startLoc && endLoc && selectedTruckId && !isSubmitting
+                                isReadyToSubmit
                                     ? 'bg-emerald-500 hover:bg-emerald-400 text-slate-900 shadow-[0_0_15px_rgba(16,185,129,0.3)]'
                                     : 'bg-slate-800 text-slate-500 cursor-not-allowed'
                             }`}
                         >
-                            {isSubmitting ? <><Loader2 size={18} className="animate-spin" /> Wysyłanie...</> : (startLoc && endLoc && selectedTruckId ? 'Potwierdź Zlecenie' : 'Uzupełnij dane zlecenia')}
+                            {isSubmitting ? (
+                                <><Loader2 size={18} className="animate-spin" /> Wysyłanie...</>
+                            ) : isFetchingRoute ? (
+                                <><Loader2 size={18} className="animate-spin text-cyan-500" /> Wyznaczanie trasy...</>
+                            ) : startLoc && endLoc && selectedTruckId ? (
+                                !hasAssignedDriver ? 'Zablokowane (Brak Kadry)' :
+                                    previewPoly1Str && previewPoly2Str ? 'Potwierdź Zlecenie' : 'Błąd wyznaczania trasy'
+                            ) : (
+                                'Uzupełnij dane zlecenia'
+                            )}
                         </button>
                     </div>
                 </div>

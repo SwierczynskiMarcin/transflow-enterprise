@@ -1,23 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { MapPin, Plus, Trash2, Edit2, X, Building2, Map as MapIcon } from 'lucide-react';
 import CoordinatePickerMap from './CoordinatePickerMap';
-
-interface LocationDB {
-    id: number;
-    name: string;
-    companyName: string;
-    type: string;
-    latitude: number;
-    longitude: number;
-    address: string;
-}
+import { useSimulation, type LocationData } from '../../context/SimulationContext';
 
 export default function LocationManager() {
-    const [locations, setLocations] = useState<LocationDB[]>([]);
+    const { locations } = useSimulation();
+
     const [isFormOpen, setIsFormOpen] = useState(false);
     const [editingId, setEditingId] = useState<number | null>(null);
-
-    const [isPickerMapOpen, setIsPickerMapOpen] = useState(false);
+    const[isPickerMapOpen, setIsPickerMapOpen] = useState(false);
 
     const [name, setName] = useState('');
     const [companyName, setCompanyName] = useState('');
@@ -26,20 +17,13 @@ export default function LocationManager() {
     const [lng, setLng] = useState(21.0122);
     const [address, setAddress] = useState('');
 
-    const loadLocations = async () => {
-        const res = await fetch('http://localhost:8080/api/locations');
-        setLocations(await res.json());
-    };
-
-    useEffect(() => { loadLocations(); }, []);
-
     const resetForm = () => {
         setName(''); setCompanyName(''); setType('WAREHOUSE');
         setLat(52.2297); setLng(21.0122); setAddress('');
         setEditingId(null); setIsFormOpen(false); setIsPickerMapOpen(false);
     };
 
-    const handleEditClick = (loc: LocationDB) => {
+    const handleEditClick = (loc: LocationData) => {
         setName(loc.name); setCompanyName(loc.companyName || '');
         setType(loc.type); setLat(loc.latitude); setLng(loc.longitude);
         setAddress(loc.address || '');
@@ -48,8 +32,7 @@ export default function LocationManager() {
 
     const handleDelete = async (id: number) => {
         if (!confirm('Czy na pewno chcesz usunąć tę lokalizację?')) return;
-        const res = await fetch(`http://localhost:8080/api/locations/${id}`, { method: 'DELETE' });
-        if (res.ok) await loadLocations();
+        await fetch(`http://localhost:8080/api/locations/${id}`, { method: 'DELETE' });
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -59,7 +42,7 @@ export default function LocationManager() {
         const method = editingId ? 'PUT' : 'POST';
 
         const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-        if (res.ok) { resetForm(); await loadLocations(); }
+        if (res.ok) { resetForm(); }
     };
 
     const handleLocationPicked = (pickedLat: number, pickedLng: number) => {
@@ -86,7 +69,7 @@ export default function LocationManager() {
                         <MapPin className="text-rose-400" size={32} />
                         Baza Adresowa
                     </h1>
-                    <p className="text-slate-400 mt-1">Zarządzaj swoimi bazami, magazynami i punktami docelowymi.</p>
+                    <p className="text-slate-400 mt-1">Lokalizacje aktualizują się u wszystkich użytkowników w czasie rzeczywistym.</p>
                 </div>
                 <button onClick={() => isFormOpen ? resetForm() : setIsFormOpen(true)} className="bg-rose-500 hover:bg-rose-400 text-white font-bold py-2 px-4 rounded-xl flex items-center gap-2 transition">
                     {isFormOpen ? <X size={20} /> : <Plus size={20} />} {isFormOpen ? 'Anuluj' : 'Dodaj Punkt'}
@@ -153,14 +136,14 @@ export default function LocationManager() {
                     {locations.map(loc => (
                         <tr key={loc.id} className="hover:bg-slate-700/50 border-b border-slate-700/50">
                             <td className="p-4 font-bold text-white flex items-center gap-2">
-                                <Building2 size={16} className={loc.type === 'BASE' ? 'text-blue-400' : loc.type === 'PORT' ? 'text-cyan-400' : 'text-rose-400'} />
+                                <Building2 size={16} className={loc.type === 'BASE' ? 'text-blue-400' : loc.type === 'PORT' ? 'text-indigo-400' : 'text-rose-400'} />
                                 {loc.name}
                             </td>
                             <td className="p-4 text-slate-300">{loc.companyName || '-'}</td>
                             <td className="p-4">
                                     <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase border ${
                                         loc.type === 'BASE' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' :
-                                            loc.type === 'PORT' ? 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20' :
+                                            loc.type === 'PORT' ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20' :
                                                 'bg-rose-500/10 text-rose-400 border-rose-500/20'
                                     }`}>
                                         {loc.type}

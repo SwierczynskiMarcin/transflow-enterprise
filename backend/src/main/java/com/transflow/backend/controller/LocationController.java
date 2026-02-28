@@ -4,6 +4,7 @@ import com.transflow.backend.model.Location;
 import com.transflow.backend.repository.LocationRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -15,6 +16,7 @@ import java.util.List;
 public class LocationController {
 
     private final LocationRepository locationRepository;
+    private final SimpMessagingTemplate messagingTemplate;
 
     @GetMapping
     public List<Location> getAllLocations() {
@@ -23,7 +25,9 @@ public class LocationController {
 
     @PostMapping
     public Location addLocation(@RequestBody Location location) {
-        return locationRepository.save(location);
+        Location saved = locationRepository.save(location);
+        messagingTemplate.convertAndSend("/topic/updates", "LOCATIONS");
+        return saved;
     }
 
     @PutMapping("/{id}")
@@ -35,7 +39,9 @@ public class LocationController {
             loc.setLatitude(details.getLatitude());
             loc.setLongitude(details.getLongitude());
             loc.setAddress(details.getAddress());
-            return ResponseEntity.ok(locationRepository.save(loc));
+            Location updated = locationRepository.save(loc);
+            messagingTemplate.convertAndSend("/topic/updates", "LOCATIONS");
+            return ResponseEntity.ok(updated);
         }).orElse(ResponseEntity.notFound().build());
     }
 
@@ -43,6 +49,7 @@ public class LocationController {
     public ResponseEntity<?> deleteLocation(@PathVariable Long id) {
         return locationRepository.findById(id).map(loc -> {
             locationRepository.delete(loc);
+            messagingTemplate.convertAndSend("/topic/updates", "LOCATIONS");
             return ResponseEntity.ok().build();
         }).orElse(ResponseEntity.notFound().build());
     }

@@ -89,6 +89,7 @@ public class SimulationService {
                 if (order.getProgress() >= 1.0) {
                     order.setStatus("LOADING");
                     order.setProgress(0.0);
+                    messagingTemplate.convertAndSend("/topic/updates", "ORDERS");
                 }
 
             } else if ("LOADING".equals(order.getStatus())) {
@@ -97,6 +98,7 @@ public class SimulationService {
                     order.setStatus("IN_TRANSIT");
                     order.setProgress(0.0);
                     order.setLoadingTicksRemaining(0);
+                    messagingTemplate.convertAndSend("/topic/updates", "ORDERS");
                 } else {
                     order.setLoadingTicksRemaining(remaining - 1);
                 }
@@ -129,6 +131,8 @@ public class SimulationService {
                 if (order.getProgress() >= 1.0) {
                     order.setStatus("COMPLETED");
                     vehicle.setStatus("AVAILABLE");
+                    messagingTemplate.convertAndSend("/topic/updates", "ORDERS");
+                    messagingTemplate.convertAndSend("/topic/updates", "VEHICLES");
                 }
             }
 

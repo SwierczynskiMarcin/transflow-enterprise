@@ -6,6 +6,7 @@ import com.transflow.backend.repository.DriverRepository;
 import com.transflow.backend.repository.VehicleRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -18,6 +19,7 @@ public class DriverController {
 
     private final DriverRepository driverRepository;
     private final VehicleRepository vehicleRepository;
+    private final SimpMessagingTemplate messagingTemplate;
 
     @GetMapping
     public List<Driver> getAllDrivers() {
@@ -52,7 +54,9 @@ public class DriverController {
 
         if (driver.getTotalDrivingTime() == null) driver.setTotalDrivingTime(0.0);
 
-        return ResponseEntity.ok(driverRepository.save(driver));
+        Driver saved = driverRepository.save(driver);
+        messagingTemplate.convertAndSend("/topic/updates", "DRIVERS");
+        return ResponseEntity.ok(saved);
     }
 
     @DeleteMapping("/{id}")
@@ -62,6 +66,7 @@ public class DriverController {
                 return ResponseEntity.badRequest().body("Nie można usunąć kierowcy w trasie.");
             }
             driverRepository.delete(driver);
+            messagingTemplate.convertAndSend("/topic/updates", "DRIVERS");
             return ResponseEntity.ok().build();
         }).orElse(ResponseEntity.notFound().build());
     }

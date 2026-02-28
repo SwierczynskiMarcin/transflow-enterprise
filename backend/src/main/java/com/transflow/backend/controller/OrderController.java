@@ -6,6 +6,7 @@ import com.transflow.backend.model.Order;
 import com.transflow.backend.service.OrderService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -17,10 +18,13 @@ import java.util.List;
 public class OrderController {
 
     private final OrderService orderService;
+    private final SimpMessagingTemplate messagingTemplate;
 
     @PostMapping
     public ResponseEntity<Order> createOrder(@RequestBody OrderCreateRequest request) {
         Order newOrder = orderService.createOrder(request);
+        messagingTemplate.convertAndSend("/topic/updates", "ORDERS");
+        messagingTemplate.convertAndSend("/topic/updates", "VEHICLES");
         return ResponseEntity.ok(newOrder);
     }
 
