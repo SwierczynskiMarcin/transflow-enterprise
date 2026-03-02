@@ -165,13 +165,11 @@ public class DemoService {
                     messagingTemplate.convertAndSend("/topic/updates", "ORDERS");
                     messagingTemplate.convertAndSend("/topic/updates", "VEHICLES");
                     messagingTemplate.convertAndSend("/topic/updates", "DRIVERS");
-                } catch (Exception e) {
-                    System.err.println("Nie udało się utworzyć zlecenia dla pojazdu: " + vehicle.getPlateNumber());
-                }
+                } catch (Exception e) {}
             }
 
             try {
-                Thread.sleep(250);
+                Thread.sleep(1000);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             }

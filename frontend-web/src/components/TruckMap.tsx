@@ -1,27 +1,17 @@
-import { useState, useEffect, useMemo } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, Polyline } from 'react-leaflet';
+import React, { useState, useEffect, useMemo } from 'react';
+import { MapContainer, TileLayer, Marker, Popup, Polyline, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import { renderToString } from 'react-dom/server';
-import { Truck, Activity, Building2, MapPin, Flag, X, Route, Loader2, AlertTriangle } from 'lucide-react';
+import { Truck, Activity, Building2, MapPin, Flag, X, Route as RouteIcon, Loader2, AlertTriangle } from 'lucide-react';
 import SimulationControls from './map/SimulationControls';
 import MapResizer from './map/MapResizer';
-import { useSimulation, type LocationData, type VehicleData } from '../context/SimulationContext';
+import { useSimulation, type LocationData, type VehicleData, decodePolyline } from '../context/SimulationContext';
 
-const decodePolyline = (str: string, precision = 5):[number, number][] => {
-    if (!str) return[];
-    let index = 0, lat = 0, lng = 0, coordinates: [number, number][] =[], shift = 0, result = 0, byte = null;
-    const factor = Math.pow(10, precision);
-    while (index < str.length) {
-        byte = null; shift = 0; result = 0;
-        do { byte = str.charCodeAt(index++) - 63; result |= (byte & 0x1f) << shift; shift += 5; } while (byte >= 0x20);
-        let latitude_change = ((result & 1) ? ~(result >> 1) : (result >> 1));
-        shift = result = 0;
-        do { byte = str.charCodeAt(index++) - 63; result |= (byte & 0x1f) << shift; shift += 5; } while (byte >= 0x20);
-        let longitude_change = ((result & 1) ? ~(result >> 1) : (result >> 1));
-        lat += latitude_change; lng += longitude_change;
-        coordinates.push([lat / factor, lng / factor]);
-    }
-    return coordinates;
+const MapEventsHandler = ({ onMapClick }: { onMapClick: () => void }) => {
+    useMapEvents({
+        click: () => onMapClick(),
+    });
+    return null;
 };
 
 const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
@@ -46,7 +36,7 @@ const createTruckIcon = (colorClass: string, glowColor: string) => {
             <Truck size={20} className={colorClass.replace('border-', 'text-')} />
         </div>
     );
-    return L.divIcon({ className: 'bg-transparent border-none', html: htmlString, iconSize: [40, 40], iconAnchor: [20, 20], popupAnchor: [0, -20] });
+    return L.divIcon({ className: 'bg-transparent border-none', html: htmlString, iconSize: [40, 40], iconAnchor: [20, 20], popupAnchor:[0, -20] });
 };
 
 const busyIcon = createTruckIcon('border-cyan-400', 'rgba(34,211,238,0.5)');
@@ -78,39 +68,74 @@ const createLocationIcon = (type: string, truckCount: number, hasBusyTrucks: boo
     return L.divIcon({ className: 'bg-transparent border-none', html: htmlString, iconSize:[40, 40], iconAnchor: [20, 20], popupAnchor:[0, -20] });
 };
 
+const MemoizedTruckMarker = React.memo(({ truck, onSelect }: { truck: VehicleData, onSelect: (id: number) => void }) => {
+    let currentIcon = availableIcon;
+    if (truck.status === 'BUSY') {
+        currentIcon = truck.orderStatus === 'APPROACHING' ? approachingIcon : busyIcon;
+    }
+
+    return (
+        <Marker
+            position={[truck.currentLat, truck.currentLng]}
+            icon={currentIcon}
+            eventHandlers={{ click: () => onSelect(truck.id) }}
+        >
+            <Popup closeButton={false} autoPan={false}>
+                <div className="text-slate-800 font-sans min-w-[150px]">
+                    <strong className="text-base block mb-1 border-b pb-1 border-slate-200">
+                        {truck.brand} {truck.model}
+                    </strong>
+                    <span className="text-sm leading-tight text-slate-600 block mb-2">
+                        Rej: <strong className="text-slate-800">{truck.plateNumber}</strong><br />
+                        Kierowca: <strong className="text-slate-800">{truck.driverName}</strong>
+                    </span>
+
+                    {truck.status === 'BUSY' ? (
+                        <span className={`text-xs font-bold px-2 py-1 rounded-full uppercase ${truck.orderStatus === 'APPROACHING' ? 'bg-amber-100 text-amber-800' :
+                            truck.orderStatus === 'LOADING' ? 'bg-blue-100 text-blue-800' : 'bg-cyan-100 text-cyan-800'
+                        }`}>
+                            {truck.orderStatus === 'APPROACHING' ? 'Dojazd: ' :
+                                truck.orderStatus === 'LOADING' ? 'Załadunek...' : 'W trasie: '}
+                            {truck.orderStatus !== 'LOADING' && `${(truck.progress * 100).toFixed(1)}%`}
+                        </span>
+                    ) : (
+                        <span className="bg-emerald-100 text-emerald-800 text-xs font-bold px-2 py-1 rounded-full uppercase">Oczekuje w trasie</span>
+                    )}
+                </div>
+            </Popup>
+        </Marker>
+    );
+}, (prev, next) => {
+    return prev.truck.currentLat === next.truck.currentLat &&
+        prev.truck.currentLng === next.truck.currentLng &&
+        prev.truck.status === next.truck.status &&
+        prev.truck.orderStatus === next.truck.orderStatus &&
+        prev.truck.progress === next.truck.progress;
+});
+
 export default function TruckMap() {
-    const { trucks, locations, activeRoutes, mapCenter, mapZoom, refreshRoutes } = useSimulation();
+    const { trucks, locations, activeRoutes, mapCenter, mapZoom } = useSimulation();
     const activeTrucks = Array.from(trucks.values()).filter(t => t.status === 'BUSY');
     const availableTrucks = Array.from(trucks.values()).filter(t => t.status === 'AVAILABLE');
 
-    const [isBuilderOpen, setIsBuilderOpen] = useState(false);
+    const[isBuilderOpen, setIsBuilderOpen] = useState(false);
     const[isSubmitting, setIsSubmitting] = useState(false);
     const [isFetchingRoute, setIsFetchingRoute] = useState(false);
     const [startLoc, setStartLoc] = useState<LocationData | null>(null);
-    const [endLoc, setEndLoc] = useState<LocationData | null>(null);
+    const[endLoc, setEndLoc] = useState<LocationData | null>(null);
     const[selectedTruckId, setSelectedTruckId] = useState<number | ''>('');
+    const[selectedRouteVehicleId, setSelectedRouteVehicleId] = useState<number | null>(null);
 
     const[previewDist1, setPreviewDist1] = useState(0);
     const [previewDist2, setPreviewDist2] = useState(0);
     const [previewPoly1Str, setPreviewPoly1Str] = useState("");
-    const [previewPoly2Str, setPreviewPoly2Str] = useState("");
+    const[previewPoly2Str, setPreviewPoly2Str] = useState("");
     const[previewRoute1, setPreviewRoute1] = useState<[number, number][]>([]);
-    const[previewRoute2, setPreviewRoute2] = useState<[number, number][]>([]);
-
-    const decodedActiveRoutes = useMemo(() => {
-        const map = new Map<number, { poly1: [number, number][], poly2: [number, number][] }>();
-        activeRoutes.forEach((route, vehicleId) => {
-            map.set(vehicleId, {
-                poly1: route.routePolylineApproaching ? decodePolyline(route.routePolylineApproaching) :[],
-                poly2: route.routePolylineTransit ? decodePolyline(route.routePolylineTransit) :[]
-            });
-        });
-        return map;
-    }, [activeRoutes]);
+    const [previewRoute2, setPreviewRoute2] = useState<[number, number][]>([]);
 
     const { parkedTrucks, trucksOnRoad } = useMemo(() => {
         const parked = new Map<number, VehicleData[]>();
-        locations.forEach(l => parked.set(l.id, []));
+        locations.forEach(l => parked.set(l.id,[]));
         const onRoad: VehicleData[] =[];
 
         Array.from(trucks.values()).forEach(truck => {
@@ -125,11 +150,10 @@ export default function TruckMap() {
             if (!isParked) { onRoad.push(truck); }
         });
         return { parkedTrucks: parked, trucksOnRoad: onRoad };
-    }, [trucks, locations]);
+    },[trucks, locations]);
 
     const selectedTruckData = selectedTruckId ? availableTrucks.find(t => t.id === selectedTruckId) : null;
     const selectedDistance = selectedTruckData && startLoc ? calculateDistance(startLoc.latitude, startLoc.longitude, selectedTruckData.currentLat, selectedTruckData.currentLng) : 0;
-
     const hasAssignedDriver = selectedTruckData?.driverName && selectedTruckData.driverName !== 'Brak przypisania';
 
     const startLocId = startLoc?.id;
@@ -257,6 +281,17 @@ export default function TruckMap() {
 
     const isReadyToSubmit = startLoc && endLoc && selectedTruckId && !isSubmitting && !isFetchingRoute && previewPoly1Str && previewPoly2Str && hasAssignedDriver;
 
+    const selectedRoute = selectedRouteVehicleId ? activeRoutes.get(selectedRouteVehicleId) : null;
+    const selectedTruck = selectedRouteVehicleId ? trucks.get(selectedRouteVehicleId) : null;
+
+    const poly1 = useMemo(() => {
+        return selectedRoute?.routePolylineApproaching ? decodePolyline(selectedRoute.routePolylineApproaching) : [];
+    }, [selectedRoute?.routePolylineApproaching]);
+
+    const poly2 = useMemo(() => {
+        return selectedRoute?.routePolylineTransit ? decodePolyline(selectedRoute.routePolylineTransit) : [];
+    }, [selectedRoute?.routePolylineTransit]);
+
     return (
         <div className="absolute inset-0 z-0">
             <MapContainer
@@ -267,28 +302,22 @@ export default function TruckMap() {
                 className="z-0 bg-slate-900"
             >
                 <MapResizer />
+                <MapEventsHandler onMapClick={() => setSelectedRouteVehicleId(null)} />
                 <TileLayer
                     url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
                     attribution='&copy; <a href="https://carto.com/">CARTO</a>'
                 />
 
-                {activeTrucks.map(truck => {
-                    const isApproaching = truck.orderStatus === 'APPROACHING';
-                    const decoded = decodedActiveRoutes.get(truck.id);
-                    const poly1 = decoded?.poly1 ||[];
-                    const poly2 = decoded?.poly2 ||[];
-
-                    return (
-                        <div key={`route-${truck.id}`}>
-                            {poly2.length > 0 && (
-                                <Polyline positions={poly2} color="#3b82f6" weight={6} opacity={isApproaching ? 0.3 : 0.8} />
-                            )}
-                            {isApproaching && poly1.length > 0 && (
-                                <Polyline positions={poly1} color="#fbbf24" weight={4} dashArray="10, 10" opacity={0.9} />
-                            )}
-                        </div>
-                    );
-                })}
+                {selectedRoute && selectedTruck && (
+                    <React.Fragment>
+                        {poly2.length > 0 && (
+                            <Polyline positions={poly2} color="#3b82f6" weight={6} opacity={selectedTruck.orderStatus === 'APPROACHING' ? 0.3 : 0.8} />
+                        )}
+                        {selectedTruck.orderStatus === 'APPROACHING' && poly1.length > 0 && (
+                            <Polyline positions={poly1} color="#fbbf24" weight={4} dashArray="10, 10" opacity={0.9} />
+                        )}
+                    </React.Fragment>
+                )}
 
                 {previewRoute2.length > 0 && (
                     <Polyline positions={previewRoute2} color="#3b82f6" weight={5} dashArray="10, 10" opacity={0.8} />
@@ -377,46 +406,19 @@ export default function TruckMap() {
                     );
                 })}
 
-                {trucksOnRoad.map((truck) => {
-                    let currentIcon = availableIcon;
-                    if (truck.status === 'BUSY') {
-                        currentIcon = truck.orderStatus === 'APPROACHING' ? approachingIcon : busyIcon;
-                    }
-
-                    return (
-                        <Marker key={`truck-${truck.id}`} position={[truck.currentLat, truck.currentLng]} icon={currentIcon}>
-                            <Popup closeButton={false} autoPan={false}>
-                                <div className="text-slate-800 font-sans min-w-[150px]">
-                                    <strong className="text-base block mb-1 border-b pb-1 border-slate-200">
-                                        {truck.brand} {truck.model}
-                                    </strong>
-                                    <span className="text-sm leading-tight text-slate-600 block mb-2">
-                                        Rej: <strong className="text-slate-800">{truck.plateNumber}</strong><br />
-                                        Kierowca: <strong className="text-slate-800">{truck.driverName}</strong>
-                                    </span>
-
-                                    {truck.status === 'BUSY' ? (
-                                        <span className={`text-xs font-bold px-2 py-1 rounded-full uppercase ${truck.orderStatus === 'APPROACHING' ? 'bg-amber-100 text-amber-800' :
-                                            truck.orderStatus === 'LOADING' ? 'bg-blue-100 text-blue-800' : 'bg-cyan-100 text-cyan-800'
-                                        }`}>
-                                            {truck.orderStatus === 'APPROACHING' ? 'Dojazd: ' :
-                                                truck.orderStatus === 'LOADING' ? 'Załadunek...' : 'W trasie: '}
-                                            {truck.orderStatus !== 'LOADING' && `${(truck.progress * 100).toFixed(1)}%`}
-                                        </span>
-                                    ) : (
-                                        <span className="bg-emerald-100 text-emerald-800 text-xs font-bold px-2 py-1 rounded-full uppercase">Oczekuje w trasie</span>
-                                    )}
-                                </div>
-                            </Popup>
-                        </Marker>
-                    );
-                })}
+                {trucksOnRoad.map(truck => (
+                    <MemoizedTruckMarker
+                        key={`truck-${truck.id}`}
+                        truck={truck}
+                        onSelect={setSelectedRouteVehicleId}
+                    />
+                ))}
             </MapContainer>
 
             {isBuilderOpen && (
                 <div className="absolute top-6 left-6 z-[1000] w-80 bg-slate-900/95 backdrop-blur-md rounded-2xl border border-slate-700 shadow-2xl overflow-hidden flex flex-col pointer-events-auto">
                     <div className="p-4 bg-slate-800/50 border-b border-slate-700 flex items-center justify-between">
-                        <h2 className="text-white font-semibold flex items-center gap-2"><Route size={18} className="text-emerald-400" /> Kreator Zlecenia</h2>
+                        <h2 className="text-white font-semibold flex items-center gap-2"><RouteIcon size={18} className="text-emerald-400" /> Kreator Zlecenia</h2>
                         <button onClick={handleCancelOrder} className="text-slate-400 hover:text-rose-400 transition-colors"><X size={20} /></button>
                     </div>
 
@@ -502,7 +504,11 @@ export default function TruckMap() {
                     ) : (
                         <div className="space-y-4">
                             {activeTrucks.map(truck => (
-                                <div key={truck.id} className="bg-slate-800/80 rounded-lg p-3 border border-slate-700">
+                                <div
+                                    key={truck.id}
+                                    className={`bg-slate-800/80 rounded-lg p-3 border transition-colors cursor-pointer ${truck.id === selectedRouteVehicleId ? 'border-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.2)]' : 'border-slate-700 hover:border-slate-500'}`}
+                                    onClick={() => setSelectedRouteVehicleId(truck.id)}
+                                >
                                     <div className="flex justify-between items-center mb-2">
                                         <div className="flex flex-col">
                                             <span className="text-white font-medium text-sm">{truck.plateNumber}</span>

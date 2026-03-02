@@ -15,6 +15,8 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 @RequiredArgsConstructor
@@ -27,6 +29,8 @@ public class SimulationService {
 
     private final double TRUCK_SPEED_KMH = 80.0;
     private final int TICK_RATE_SECONDS = 2;
+
+    private final Map<String, List<double[]>> polylineCache = new ConcurrentHashMap<>();
 
     @Getter @Setter
     private boolean isRunning = true;
@@ -47,6 +51,8 @@ public class SimulationService {
                 .filter(o -> List.of("APPROACHING", "LOADING", "IN_TRANSIT").contains(o.getStatus()))
                 .toList();
 
+        List<VehicleSimulationDTO> tickUpdates = new ArrayList<>();
+
         for (Order order : activeOrders) {
             Vehicle vehicle = order.getVehicle();
 
@@ -65,7 +71,7 @@ public class SimulationService {
                     double addedProgress = distanceInTickMeters / order.getRouteDistanceApproaching();
                     order.setProgress(Math.min(1.0, order.getProgress() + addedProgress));
 
-                    List<double[]> polyline = decodePolyline(order.getRoutePolylineApproaching());
+                    List<double[]> polyline = decodePolylineCached(order.getRoutePolylineApproaching());
                     double targetDistMeters = order.getProgress() * order.getRouteDistanceApproaching();
                     double[] newPos = getPositionAtDistance(polyline, targetDistMeters);
 
@@ -107,7 +113,7 @@ public class SimulationService {
                     double addedProgress = distanceInTickMeters / order.getRouteDistanceTransit();
                     order.setProgress(Math.min(1.0, order.getProgress() + addedProgress));
 
-                    List<double[]> polyline = decodePolyline(order.getRoutePolylineTransit());
+                    List<double[]> polyline = decodePolylineCached(order.getRoutePolylineTransit());
                     double targetDistMeters = order.getProgress() * order.getRouteDistanceTransit();
                     double[] newPos = getPositionAtDistance(polyline, targetDistMeters);
 
@@ -151,8 +157,17 @@ public class SimulationService {
             dto.setProgress(order.getProgress());
             dto.setGpsDistance(order.getGpsDistance());
 
-            messagingTemplate.convertAndSend("/topic/trucks", dto);
+            tickUpdates.add(dto);
         }
+
+        if (!tickUpdates.isEmpty()) {
+            messagingTemplate.convertAndSend("/topic/trucks", tickUpdates);
+        }
+    }
+
+    private List<double[]> decodePolylineCached(String encoded) {
+        if (encoded == null || encoded.isEmpty()) return new ArrayList<>();
+        return polylineCache.computeIfAbsent(encoded, this::decodePolyline);
     }
 
     private double[] getPositionAtDistance(List<double[]> polyline, double targetDistance) {
