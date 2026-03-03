@@ -1,16 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { User, Plus, Trash2, Edit2, X } from 'lucide-react';
 import { useSimulation } from '../../context/SimulationContext';
+import { getDrivers, addDriver, updateDriver, deleteDriver, getVehicles } from '../../api/fleetApi';
+import { useToast } from '../../context/ToastContext';
 
 interface DriverDB { id: number; firstName: string; lastName: string; phoneNumber: string; status: string; assignedVehicle?: { id: number; plateNumber: string; brand: string; }; }
 interface VehicleDB { id: number; plateNumber: string; brand: string; }
 
 export default function DriverManager() {
     const { refreshVehicles } = useSimulation();
+    const { showToast } = useToast();
     const [drivers, setDrivers] = useState<DriverDB[]>([]);
     const [vehicles, setVehicles] = useState<VehicleDB[]>([]);
     const [isFormOpen, setIsFormOpen] = useState(false);
-    const [editingId, setEditingId] = useState<number | null>(null);
+    const[editingId, setEditingId] = useState<number | null>(null);
 
     const [firstName, setFirstName] = useState('');
     const [lastName, setLastName] = useState('');
@@ -18,11 +21,16 @@ export default function DriverManager() {
     const [selectedVehicleId, setSelectedVehicleId] = useState<string>('');
 
     const loadData = async () => {
-        const [drvRes, vehRes] = await Promise.all([ fetch('http://localhost:8080/api/drivers'), fetch('http://localhost:8080/api/vehicles') ]);
-        setDrivers(await drvRes.json()); setVehicles(await vehRes.json());
+        try {
+            const [drvRes, vehRes] = await Promise.all([getDrivers(), getVehicles()]);
+            setDrivers(drvRes);
+            setVehicles(vehRes);
+        } catch (error) {
+            console.error(error);
+        }
     };
 
-    useEffect(() => { loadData(); }, []);
+    useEffect(() => { loadData(); },[]);
 
     const resetForm = () => {
         setFirstName(''); setLastName(''); setPhone(''); setSelectedVehicleId('');
@@ -37,18 +45,34 @@ export default function DriverManager() {
 
     const handleDelete = async (id: number) => {
         if (!confirm('Czy na pewno chcesz usunąć kierowcę?')) return;
-        const res = await fetch(`http://localhost:8080/api/drivers/${id}`, { method: 'DELETE' });
-        if (res.ok) { await loadData(); await refreshVehicles(); } else alert('Nie można usunąć kierowcy w trasie.');
+        try {
+            await deleteDriver(id);
+            await loadData();
+            await refreshVehicles();
+            showToast('Kierowca został usunięty z systemu', 'success');
+        } catch (error: any) {
+            showToast(error.message, 'error');
+        }
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         const payload = { firstName, lastName, phoneNumber: phone, assignedVehicle: selectedVehicleId ? { id: parseInt(selectedVehicleId) } : null };
-        const url = editingId ? `http://localhost:8080/api/drivers/${editingId}` : 'http://localhost:8080/api/drivers';
-        const method = editingId ? 'PUT' : 'POST';
 
-        const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-        if (res.ok) { resetForm(); await loadData(); await refreshVehicles(); }
+        try {
+            if (editingId) {
+                await updateDriver(editingId, payload);
+                showToast('Dane kierowcy zostały zaktualizowane', 'success');
+            } else {
+                await addDriver(payload);
+                showToast('Nowy kierowca został dodany do bazy', 'success');
+            }
+            resetForm();
+            await loadData();
+            await refreshVehicles();
+        } catch (error: any) {
+            showToast(error.message, 'error');
+        }
     };
 
     const availableVehicles = vehicles.filter(v =>

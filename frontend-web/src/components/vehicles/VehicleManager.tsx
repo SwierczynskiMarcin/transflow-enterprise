@@ -2,29 +2,22 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Truck, Plus, Trash2, Edit2, X, User, Map as MapIcon, MapPin } from 'lucide-react';
 import { useSimulation } from '../../context/SimulationContext';
 import CoordinatePickerMap from '../locations/CoordinatePickerMap';
-
-const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
-    const R = 6371;
-    const dLat = (lat2 - lat1) * Math.PI / 180;
-    const dLon = (lon2 - lon1) * Math.PI / 180;
-    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-        Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-        Math.sin(dLon/2) * Math.sin(dLon/2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-    return R * c;
-};
+import { getVehicles, addVehicle, updateVehicle, deleteVehicle } from '../../api/fleetApi';
+import { calculateDistance } from '../../utils/mapUtils';
+import { useToast } from '../../context/ToastContext';
 
 export default function VehicleManager() {
     const { trucks, locations, orders } = useSimulation();
-    const [vehiclesData, setVehiclesData] = useState<any[]>([]);
+    const { showToast } = useToast();
+    const[vehiclesData, setVehiclesData] = useState<any[]>([]);
 
     const [isFormOpen, setIsFormOpen] = useState(false);
-    const[editingId, setEditingId] = useState<number | null>(null);
-    const[isPickerMapOpen, setIsPickerMapOpen] = useState(false);
+    const [editingId, setEditingId] = useState<number | null>(null);
+    const [isPickerMapOpen, setIsPickerMapOpen] = useState(false);
 
-    const [plate, setPlate] = useState('');
+    const[plate, setPlate] = useState('');
     const [brand, setBrand] = useState('');
-    const [model, setModel] = useState('');
+    const[model, setModel] = useState('');
     const [consumption, setConsumption] = useState(25);
     const [capacity, setCapacity] = useState(600);
     const [lat, setLat] = useState(52.2297);
@@ -32,8 +25,12 @@ export default function VehicleManager() {
 
     useEffect(() => {
         const fetchDBData = async () => {
-            const res = await fetch('http://localhost:8080/api/vehicles');
-            setVehiclesData(await res.json());
+            try {
+                const data = await getVehicles();
+                setVehiclesData(data);
+            } catch (err) {
+                console.error(err);
+            }
         };
         fetchDBData();
     }, [trucks]);
@@ -69,27 +66,33 @@ export default function VehicleManager() {
 
     const handleDelete = async (id: number) => {
         if (!confirm('Czy na pewno chcesz usunąć ten pojazd?')) return;
-        const res = await fetch(`http://localhost:8080/api/vehicles/${id}`, { method: 'DELETE' });
-        if (!res.ok) alert('Nie można usunąć pojazdu. Prawdopodobnie jest w trasie.');
+        try {
+            await deleteVehicle(id);
+            showToast('Pojazd został usunięty', 'success');
+        } catch (error: any) {
+            showToast(error.message, 'error');
+        }
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         const payload = { plateNumber: plate, brand, model, baseFuelConsumption: consumption, fuelCapacity: capacity, currentLat: lat, currentLng: lng };
 
-        const url = editingId ? `http://localhost:8080/api/vehicles/${editingId}` : 'http://localhost:8080/api/vehicles';
-        const method = editingId ? 'PUT' : 'POST';
-
-        const res = await fetch(url, {
-            method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
-        });
-
-        if (res.ok) {
+        try {
+            if (editingId) {
+                await updateVehicle(editingId, payload);
+                showToast('Dane pojazdu zostały zaktualizowane', 'success');
+            } else {
+                await addVehicle(payload);
+                showToast('Nowy pojazd został dodany do floty', 'success');
+            }
             resetForm();
+        } catch (error: any) {
+            showToast(error.message, 'error');
         }
     };
 
-    const resolveCurrentLocationText = (vehicleId: number, dbLat: number, dbLng: number) => {
+    const resolveCurrentLocationText = (vehicleId: number) => {
         const liveTruck = trucks.get(vehicleId);
         if (!liveTruck) return <span className="text-slate-500 italic">Ładowanie...</span>;
 
@@ -213,7 +216,7 @@ export default function VehicleManager() {
                                     )}
                                 </td>
                                 <td className="p-4 text-sm">
-                                    {resolveCurrentLocationText(v.id, v.currentLat, v.currentLng)}
+                                    {resolveCurrentLocationText(v.id)}
                                 </td>
                                 <td className="p-4 flex justify-end gap-2">
                                     <button onClick={() => handleEditClick(v)} className="p-2 bg-blue-500/10 text-blue-400 hover:bg-blue-500 hover:text-white rounded-lg transition" title="Edytuj"><Edit2 size={18} /></button>

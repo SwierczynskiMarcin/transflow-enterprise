@@ -1,6 +1,9 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import SockJS from 'sockjs-client';
 import { Client } from '@stomp/stompjs';
+import { getLocations, getActiveRoutes, getOrders } from '../api/logisticsApi';
+import { getVehicles, getDrivers } from '../api/fleetApi';
+import { getSimulationStatus, toggleSimulation, setSimulationSpeed } from '../api/simulationApi';
 
 export const decodePolyline = (str: string, precision = 5): [number, number][] => {
     if (!str) return[];
@@ -86,25 +89,24 @@ const SimulationContext = createContext<SimulationContextProps | undefined>(unde
 export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const[trucks, setTrucks] = useState<Map<number, VehicleData>>(new Map());
     const [locations, setLocations] = useState<LocationData[]>([]);
-    const [activeRoutes, setActiveRoutes] = useState<Map<number, ActiveRoute>>(new Map());
-    const [orders, setOrders] = useState<OrderData[]>([]);
+    const[activeRoutes, setActiveRoutes] = useState<Map<number, ActiveRoute>>(new Map());
+    const[orders, setOrders] = useState<OrderData[]>([]);
     const [isPlaying, setIsPlaying] = useState(true);
     const [speed, setSpeed] = useState(60);
-    const [virtualTime, setVirtualTime] = useState<string | null>(null);
+    const[virtualTime, setVirtualTime] = useState<string | null>(null);
     const [mapCenter, setMapCenter] = useState<[number, number]>([52.0, 19.0]);
-    const [mapZoom, setMapZoom] = useState<number>(6);
+    const[mapZoom, setMapZoom] = useState<number>(6);
 
     const refreshLocations = useCallback(async () => {
         try {
-            const res = await fetch('http://localhost:8080/api/locations');
-            setLocations(await res.json());
+            const data = await getLocations();
+            setLocations(data ||[]);
         } catch (err) {}
     },[]);
 
     const refreshRoutes = useCallback(async () => {
         try {
-            const res = await fetch('http://localhost:8080/api/orders/active-routes');
-            const data: ActiveRoute[] = await res.json();
+            const data: ActiveRoute[] = await getActiveRoutes() ||[];
             const routeMap = new Map<number, ActiveRoute>();
             data.forEach(r => {
                 routeMap.set(r.vehicleId, r);
@@ -128,34 +130,35 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
     const refreshOrders = useCallback(async () => {
         try {
-            const res = await fetch('http://localhost:8080/api/orders');
-            setOrders(await res.json());
+            const data = await getOrders();
+            setOrders(data ||[]);
         } catch (err) {}
     },[]);
 
     const refreshVehicles = useCallback(async () => {
         try {
-            const[vehRes, drvRes] = await Promise.all([
-                fetch('http://localhost:8080/api/vehicles'),
-                fetch('http://localhost:8080/api/drivers')
+            const [vehicles, drivers] = await Promise.all([
+                getVehicles(),
+                getDrivers()
             ]);
 
-            const vehicles: any[] = await vehRes.json();
-            const drivers: any[] = await drvRes.json();
-
             const driverMap = new Map();
-            drivers.forEach(d => {
-                if (d.assignedVehicle) driverMap.set(d.assignedVehicle.id, `${d.firstName} ${d.lastName}`);
-            });
+            if (drivers) {
+                drivers.forEach((d: any) => {
+                    if (d.assignedVehicle) driverMap.set(d.assignedVehicle.id, `${d.firstName} ${d.lastName}`);
+                });
+            }
 
             setTrucks(prev => {
                 const newMap = new Map(prev);
-                const dbVehicleIds = new Set(vehicles.map(v => v.id));
+                if (!vehicles) return prev;
+
+                const dbVehicleIds = new Set(vehicles.map((v: any) => v.id));
                 for (const id of newMap.keys()) {
                     if (!dbVehicleIds.has(id)) newMap.delete(id);
                 }
 
-                vehicles.forEach(v => {
+                vehicles.forEach((v: any) => {
                     const existing = newMap.get(v.id);
                     const isCurrentlyBusy = existing && existing.status === 'BUSY';
 
@@ -179,11 +182,12 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     },[]);
 
     useEffect(() => {
-        fetch('http://localhost:8080/api/simulation/status')
-            .then(res => res.json())
+        getSimulationStatus()
             .then(data => {
-                setIsPlaying(data.isRunning);
-                setSpeed(data.timeMultiplier);
+                if (data) {
+                    setIsPlaying(data.isRunning);
+                    setSpeed(data.timeMultiplier);
+                }
             }).catch(() => {});
 
         refreshVehicles();
@@ -256,17 +260,24 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         return () => {
             client.deactivate();
         };
-    }, [refreshVehicles, refreshLocations, refreshRoutes, refreshOrders]);
+    },[refreshVehicles, refreshLocations, refreshRoutes, refreshOrders]);
 
     const togglePlay = async () => {
-        const res = await fetch('http://localhost:8080/api/simulation/toggle', { method: 'POST' });
-        const data = await res.json();
-        setIsPlaying(data.isRunning);
+        try {
+            const data = await toggleSimulation();
+            if (data) setIsPlaying(data.isRunning);
+        } catch (error) {
+            console.error(error);
+        }
     };
 
     const changeSpeed = async (newSpeed: number) => {
-        setSpeed(newSpeed);
-        await fetch(`http://localhost:8080/api/simulation/speed?multiplier=${newSpeed}`, { method: 'POST' });
+        try {
+            setSpeed(newSpeed);
+            await setSimulationSpeed(newSpeed);
+        } catch (error) {
+            console.error(error);
+        }
     };
 
     const setMapViewState = (center: [number, number], zoom: number) => {

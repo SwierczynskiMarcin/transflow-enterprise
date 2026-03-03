@@ -2,9 +2,12 @@ import React, { useState } from 'react';
 import { MapPin, Plus, Trash2, Edit2, X, Building2, Map as MapIcon } from 'lucide-react';
 import CoordinatePickerMap from './CoordinatePickerMap';
 import { useSimulation, type LocationData } from '../../context/SimulationContext';
+import { addLocation, updateLocation, deleteLocation } from '../../api/logisticsApi';
+import { useToast } from '../../context/ToastContext';
 
 export default function LocationManager() {
     const { locations } = useSimulation();
+    const { showToast } = useToast();
 
     const [isFormOpen, setIsFormOpen] = useState(false);
     const [editingId, setEditingId] = useState<number | null>(null);
@@ -15,7 +18,7 @@ export default function LocationManager() {
     const [type, setType] = useState('WAREHOUSE');
     const [lat, setLat] = useState(52.2297);
     const [lng, setLng] = useState(21.0122);
-    const [address, setAddress] = useState('');
+    const[address, setAddress] = useState('');
 
     const resetForm = () => {
         setName(''); setCompanyName(''); setType('WAREHOUSE');
@@ -32,17 +35,30 @@ export default function LocationManager() {
 
     const handleDelete = async (id: number) => {
         if (!confirm('Czy na pewno chcesz usunąć tę lokalizację?')) return;
-        await fetch(`http://localhost:8080/api/locations/${id}`, { method: 'DELETE' });
+        try {
+            await deleteLocation(id);
+            showToast('Lokalizacja została poprawnie usunięta', 'success');
+        } catch (error: any) {
+            showToast(error.message, 'error');
+        }
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         const payload = { name, companyName, type, latitude: lat, longitude: lng, address };
-        const url = editingId ? `http://localhost:8080/api/locations/${editingId}` : 'http://localhost:8080/api/locations';
-        const method = editingId ? 'PUT' : 'POST';
 
-        const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-        if (res.ok) { resetForm(); }
+        try {
+            if (editingId) {
+                await updateLocation(editingId, payload);
+                showToast('Dane lokalizacji zostały zaktualizowane', 'success');
+            } else {
+                await addLocation(payload);
+                showToast('Dodano nowy punkt logistyczny', 'success');
+            }
+            resetForm();
+        } catch (error: any) {
+            showToast(error.message, 'error');
+        }
     };
 
     const handleLocationPicked = (pickedLat: number, pickedLng: number) => {

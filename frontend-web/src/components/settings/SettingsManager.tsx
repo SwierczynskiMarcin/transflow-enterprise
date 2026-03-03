@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react';
-import { Settings as SettingsIcon, Database, Globe, Users, Trash2, Loader2, CheckCircle2, Rocket } from 'lucide-react';
+import { Settings as SettingsIcon, Database, Globe, Users, Trash2, Loader2, Rocket } from 'lucide-react';
 import { useSimulation } from '../../context/SimulationContext';
+import { seedLocations, seedFleet, autoDispatch, clearAllData } from '../../api/demoApi';
+import { useToast } from '../../context/ToastContext';
 
 export default function SettingsManager() {
     const { trucks, refreshLocations, refreshVehicles, refreshRoutes, refreshOrders } = useSimulation();
+    const { showToast } = useToast();
 
     const [loadingAction, setLoadingAction] = useState<string | null>(null);
-    const[successMessage, setSuccessMessage] = useState<string | null>(null);
 
     const availableTrucksWithDrivers = Array.from(trucks.values()).filter(t => t.status === 'AVAILABLE' && t.driverName && t.driverName !== 'Brak przypisania');
     const maxDispatch = availableTrucksWithDrivers.length;
@@ -21,23 +23,19 @@ export default function SettingsManager() {
         }
     }, [maxDispatch]);
 
-    const handleAction = async (endpoint: string, actionName: string, successText: string) => {
-        if (actionName === 'clear' && !confirm("UWAGA! Ta operacja wywoła polecenie SQL TRUNCATE CASCADE. Bezpowrotnie usunie wszystkie dane, pojazdy, zlecenia i bazy z systemu oraz wyzeruje identyfikatory (ID). Kontynuować?")) {
+    const handleAction = async (actionId: string, actionFn: () => Promise<any>, successText: string) => {
+        if (actionId === 'clear' && !confirm("UWAGA! Ta operacja wywoła polecenie SQL TRUNCATE CASCADE. Bezpowrotnie usunie wszystkie dane, pojazdy, zlecenia i bazy z systemu oraz wyzeruje identyfikatory (ID). Kontynuować?")) {
             return;
         }
 
-        setLoadingAction(actionName);
-        setSuccessMessage(null);
+        setLoadingAction(actionId);
 
         try {
-            const res = await fetch(`http://localhost:8080/api/demo/${endpoint}`, { method: 'POST' });
-            if (res.ok) {
-                await Promise.all([refreshLocations(), refreshVehicles(), refreshRoutes(), refreshOrders()]);
-                setSuccessMessage(successText);
-                setTimeout(() => setSuccessMessage(null), 4000);
-            }
-        } catch (error) {
-            console.error(error);
+            await actionFn();
+            await Promise.all([refreshLocations(), refreshVehicles(), refreshRoutes(), refreshOrders()]);
+            showToast(successText, 'success');
+        } catch (error: any) {
+            showToast(error.message, 'error');
         } finally {
             setLoadingAction(null);
         }
@@ -55,13 +53,6 @@ export default function SettingsManager() {
                 </div>
             </div>
 
-            {successMessage && (
-                <div className="mb-8 p-4 bg-emerald-500/10 border border-emerald-500/50 rounded-xl flex items-center gap-3 animate-[fadeIn_0.3s_ease-out]">
-                    <CheckCircle2 className="text-emerald-400" size={24} />
-                    <span className="font-bold text-emerald-400">{successMessage}</span>
-                </div>
-            )}
-
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
 
                 <div className="bg-slate-800 rounded-2xl border border-slate-700 p-6 shadow-xl relative overflow-hidden group flex flex-col justify-between">
@@ -78,7 +69,7 @@ export default function SettingsManager() {
                         </p>
                     </div>
                     <button
-                        onClick={() => handleAction('seed-locations', 'locations', 'Sieć 25 hubów została pomyślnie zsynchronizowana z bazą danych!')}
+                        onClick={() => handleAction('locations', seedLocations, 'Sieć 25 hubów została pomyślnie zsynchronizowana z bazą danych!')}
                         disabled={loadingAction !== null}
                         className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-xl transition flex items-center justify-center gap-2 relative z-10 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
@@ -100,7 +91,7 @@ export default function SettingsManager() {
                         </p>
                     </div>
                     <button
-                        onClick={() => handleAction('seed-fleet', 'fleet', 'Braki we flocie zostały uzupełnione. Przypisano nowe kadry.')}
+                        onClick={() => handleAction('fleet', seedFleet, 'Braki we flocie zostały uzupełnione. Przypisano nowe kadry.')}
                         disabled={loadingAction !== null}
                         className="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-3 rounded-xl transition flex items-center justify-center gap-2 relative z-10 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
@@ -140,7 +131,7 @@ export default function SettingsManager() {
                     </div>
 
                     <button
-                        onClick={() => handleAction(`auto-dispatch?count=${dispatchCount}`, 'dispatch', `Dyspozytor masowy pomyślnie wysłał ${dispatchCount} pojazdów w trasy.`)}
+                        onClick={() => handleAction('dispatch', () => autoDispatch(dispatchCount), `Dyspozytor masowy pomyślnie wysłał ${dispatchCount} pojazdów w trasy.`)}
                         disabled={maxDispatch === 0 || loadingAction !== null}
                         className="w-full bg-amber-600 hover:bg-amber-500 text-white font-bold py-3 rounded-xl transition flex items-center justify-center gap-2 relative z-10 disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_0_15px_rgba(245,158,11,0.2)]"
                     >
@@ -160,7 +151,7 @@ export default function SettingsManager() {
                         UWAGA: Operacja krytyczna i nieodwracalna. Uruchomienie tej procedury spowoduje natychmiastowe i bezpowrotne wymazanie wszystkich danych z systemu. Wszystkie liczniki i identyfikatory zostaną całkowicie wyzerowane, przywracając bazę do absolutnego stanu surowego. Po wykonaniu tego kroku nie ma możliwości cofnięcia zmian ani odzyskania utraconych informacji.
                     </p>
                     <button
-                        onClick={() => handleAction('clear-all', 'clear', 'System zresetowany. ID sekwencji wyzerowane.')}
+                        onClick={() => handleAction('clear', clearAllData, 'System zresetowany. ID sekwencji wyzerowane.')}
                         disabled={loadingAction !== null}
                         className="bg-rose-600 hover:bg-rose-500 text-white font-bold py-3 px-8 rounded-xl transition flex items-center justify-center gap-2 relative z-10 disabled:opacity-50 disabled:cursor-not-allowed border border-rose-500 shadow-[0_0_15px_rgba(225,29,72,0.3)] w-full md:w-auto"
                     >
