@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { MapPin, Plus, Trash2, Edit2, X, Building2, Map as MapIcon } from 'lucide-react';
 import CoordinatePickerMap from './CoordinatePickerMap';
 import { useSimulation, type LocationData } from '../../context/SimulationContext';
@@ -8,17 +8,18 @@ import { useToast } from '../../context/ToastContext';
 export default function LocationManager() {
     const { locations } = useSimulation();
     const { showToast } = useToast();
+    const containerRef = useRef<HTMLDivElement>(null);
 
-    const [isFormOpen, setIsFormOpen] = useState(false);
+    const[isFormOpen, setIsFormOpen] = useState(false);
     const [editingId, setEditingId] = useState<number | null>(null);
-    const[isPickerMapOpen, setIsPickerMapOpen] = useState(false);
+    const [isPickerMapOpen, setIsPickerMapOpen] = useState(false);
 
     const [name, setName] = useState('');
     const [companyName, setCompanyName] = useState('');
     const [type, setType] = useState('WAREHOUSE');
     const [lat, setLat] = useState(52.2297);
     const [lng, setLng] = useState(21.0122);
-    const[address, setAddress] = useState('');
+    const [address, setAddress] = useState('');
 
     const resetForm = () => {
         setName(''); setCompanyName(''); setType('WAREHOUSE');
@@ -31,6 +32,7 @@ export default function LocationManager() {
         setType(loc.type); setLat(loc.latitude); setLng(loc.longitude);
         setAddress(loc.address || '');
         setEditingId(loc.id); setIsFormOpen(true);
+        containerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
     const handleDelete = async (id: number) => {
@@ -68,7 +70,7 @@ export default function LocationManager() {
     };
 
     return (
-        <div className="p-8 h-full w-full overflow-y-auto bg-slate-900 text-slate-200 relative">
+        <div ref={containerRef} className="p-8 h-full w-full overflow-y-auto bg-slate-900 text-slate-200 relative">
 
             {isPickerMapOpen && (
                 <CoordinatePickerMap
@@ -150,7 +152,7 @@ export default function LocationManager() {
                     </thead>
                     <tbody>
                     {locations.map(loc => (
-                        <tr key={loc.id} className="hover:bg-slate-700/50 border-b border-slate-700/50">
+                        <tr key={loc.id} className="hover:bg-slate-700/50 border-b border-slate-700/50 transition-colors duration-300">
                             <td className="p-4 font-bold text-white flex items-center gap-2">
                                 <Building2 size={16} className={loc.type === 'BASE' ? 'text-blue-400' : loc.type === 'PORT' ? 'text-indigo-400' : 'text-rose-400'} />
                                 {loc.name}

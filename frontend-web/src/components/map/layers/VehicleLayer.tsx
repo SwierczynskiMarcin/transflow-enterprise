@@ -1,5 +1,5 @@
 import { useMemo, memo } from 'react';
-import { Marker, Popup } from 'react-leaflet';
+import { Marker } from 'react-leaflet';
 import L from 'leaflet';
 import { renderToString } from 'react-dom/server';
 import { Truck } from 'lucide-react';
@@ -7,72 +7,73 @@ import { useSimulation, type VehicleData } from '../../../context/SimulationCont
 import { useMapContext } from '../MapContext';
 import { calculateDistance } from '../../../utils/mapUtils';
 
-const createTruckIcon = (colorClass: string, glowColor: string) => {
+const createTruckIcon = (colorClass: string, glowColor: string, isSelected: boolean) => {
+    const dynamicGlow = isSelected ? glowColor.replace('0.5)', '0.9)') : glowColor;
+    const scaleClass = isSelected ? 'scale-125' : 'hover:scale-110';
+
     const htmlString = renderToString(
         <div className={`
             bg-slate-900 p-2 rounded-full border-2 ${colorClass} 
             transition-all duration-300 ease-out cursor-pointer
-            shadow-[0_0_15px_${glowColor}] hover:scale-125 hover:shadow-[0_0_25px_${glowColor}]
+            shadow-[0_0_15px_${dynamicGlow}] ${scaleClass}
             flex items-center justify-center group
         `}>
             <Truck size={20} className={colorClass.replace('border-', 'text-')} />
         </div>
     );
-    return L.divIcon({ className: 'bg-transparent border-none', html: htmlString, iconSize:[40, 40], iconAnchor: [20, 20], popupAnchor:[0, -20] });
+    return L.divIcon({ className: 'bg-transparent border-none', html: htmlString, iconSize:[40, 40], iconAnchor: [20, 20] });
 };
 
-const busyIcon = createTruckIcon('border-cyan-400', 'rgba(34,211,238,0.5)');
-const availableIcon = createTruckIcon('border-emerald-400', 'rgba(52,211,153,0.5)');
-const approachingIcon = createTruckIcon('border-amber-400', 'rgba(251,191,36,0.5)');
+const MemoizedTruckMarker = memo(({
+                                      truck, onSelect, onHover, onHoverOut, isSelected
+                                  }: {
+    truck: VehicleData,
+    onSelect: (id: number) => void,
+    onHover: (id: number) => void,
+    onHoverOut: () => void,
+    isSelected: boolean
+}) => {
+    let colorClass = 'border-emerald-400';
+    let glowColor = 'rgba(52,211,153,0.5)';
 
-const MemoizedTruckMarker = memo(({ truck, onSelect }: { truck: VehicleData, onSelect: (id: number) => void }) => {
-    let currentIcon = availableIcon;
     if (truck.status === 'BUSY') {
-        currentIcon = truck.orderStatus === 'APPROACHING' ? approachingIcon : busyIcon;
+        if (truck.orderStatus === 'APPROACHING') {
+            colorClass = 'border-amber-400';
+            glowColor = 'rgba(251,191,36,0.5)';
+        } else {
+            colorClass = 'border-cyan-400';
+            glowColor = 'rgba(34,211,238,0.5)';
+        }
     }
 
     return (
         <Marker
             position={[truck.currentLat, truck.currentLng]}
-            icon={currentIcon}
-            eventHandlers={{ click: () => onSelect(truck.id) }}
-        >
-            <Popup closeButton={false} autoPan={false}>
-                <div className="text-slate-800 font-sans min-w-[150px]">
-                    <strong className="text-base block mb-1 border-b pb-1 border-slate-200">
-                        {truck.brand} {truck.model}
-                    </strong>
-                    <span className="text-sm leading-tight text-slate-600 block mb-2">
-                        Rej: <strong className="text-slate-800">{truck.plateNumber}</strong><br />
-                        Kierowca: <strong className="text-slate-800">{truck.driverName}</strong>
-                    </span>
-
-                    {truck.status === 'BUSY' ? (
-                        <span className={`text-xs font-bold px-2 py-1 rounded-full uppercase ${truck.orderStatus === 'APPROACHING' ? 'bg-amber-100 text-amber-800' :
-                            truck.orderStatus === 'LOADING' ? 'bg-blue-100 text-blue-800' : 'bg-cyan-100 text-cyan-800'
-                        }`}>
-                            {truck.orderStatus === 'APPROACHING' ? 'Dojazd: ' :
-                                truck.orderStatus === 'LOADING' ? 'Załadunek...' : 'W trasie: '}
-                            {truck.orderStatus !== 'LOADING' && `${(truck.progress * 100).toFixed(1)}%`}
-                        </span>
-                    ) : (
-                        <span className="bg-emerald-100 text-emerald-800 text-xs font-bold px-2 py-1 rounded-full uppercase">Oczekuje w trasie</span>
-                    )}
-                </div>
-            </Popup>
-        </Marker>
+            icon={createTruckIcon(colorClass, glowColor, isSelected)}
+            zIndexOffset={isSelected ? 1000 : 500}
+            eventHandlers={{
+                click: () => onSelect(truck.id),
+                mouseover: () => onHover(truck.id),
+                mouseout: () => onHoverOut()
+            }}
+        />
     );
 }, (prev, next) => {
     return prev.truck.currentLat === next.truck.currentLat &&
         prev.truck.currentLng === next.truck.currentLng &&
         prev.truck.status === next.truck.status &&
         prev.truck.orderStatus === next.truck.orderStatus &&
-        prev.truck.progress === next.truck.progress;
+        prev.truck.progress === next.truck.progress &&
+        prev.isSelected === next.isSelected;
 });
 
 export default function VehicleLayer() {
     const { trucks, locations } = useSimulation();
-    const { setSelectedRouteVehicleId } = useMapContext();
+    const {
+        setSelectedRouteVehicleId,
+        setHoveredVehicleId,
+        selectedRouteVehicleId
+    } = useMapContext();
 
     const trucksOnRoad = useMemo(() => {
         const onRoad: VehicleData[] =[];
@@ -87,7 +88,7 @@ export default function VehicleLayer() {
             if (!isParked) { onRoad.push(truck); }
         });
         return onRoad;
-    },[trucks, locations]);
+    }, [trucks, locations]);
 
     return (
         <>
@@ -95,7 +96,10 @@ export default function VehicleLayer() {
                 <MemoizedTruckMarker
                     key={`truck-${truck.id}`}
                     truck={truck}
+                    isSelected={selectedRouteVehicleId === truck.id}
                     onSelect={setSelectedRouteVehicleId}
+                    onHover={setHoveredVehicleId}
+                    onHoverOut={() => setHoveredVehicleId(null)}
                 />
             ))}
         </>

@@ -11,7 +11,7 @@ export default function OrderManager() {
             let computedProgress = order.progress;
 
             if (['APPROACHING', 'LOADING', 'IN_TRANSIT'].includes(order.status)) {
-                const liveTruck = trucks.get(order.vehicle.id);
+                const liveTruck = order.vehicle ? trucks.get(order.vehicle.id) : null;
                 if (liveTruck) {
                     if (liveTruck.status === 'AVAILABLE') {
                         computedStatus = 'COMPLETED';
@@ -65,7 +65,7 @@ export default function OrderManager() {
                         <tr className="bg-slate-900/50 text-slate-400 text-xs uppercase tracking-wider">
                             <th className="p-4 border-b border-slate-700">ID</th>
                             <th className="p-4 border-b border-slate-700">Trasa</th>
-                            <th className="p-4 border-b border-slate-700">Flota</th>
+                            <th className="p-4 border-b border-slate-700">Zasoby Flotowe</th>
                             <th className="p-4 border-b border-slate-700">Status & Postęp</th>
                         </tr>
                         </thead>
@@ -83,8 +83,8 @@ export default function OrderManager() {
                                     <div className="flex items-center gap-2">
                                         <Truck size={16} className="text-slate-400" />
                                         <div className="flex flex-col">
-                                            <span className="text-sm font-bold text-white">{order.vehicle.plateNumber}</span>
-                                            <span className="text-xs text-slate-500">{order.driver ? `${order.driver.firstName} ${order.driver.lastName}` : 'Brak Kierowcy'}</span>
+                                            <span className="text-sm font-bold text-white">{order.vehicle?.plateNumber || <span className="text-slate-500 italic">Brak auta</span>}</span>
+                                            <span className="text-xs text-slate-500">{order.driver ? `[#${order.driver.id}] ${order.driver.firstName} ${order.driver.lastName}` : 'Brak Kierowcy'}</span>
                                         </div>
                                     </div>
                                 </td>
@@ -116,7 +116,7 @@ export default function OrderManager() {
                         <tr className="bg-slate-900/50 text-slate-400 text-xs uppercase tracking-wider">
                             <th className="p-4 border-b border-slate-700">ID</th>
                             <th className="p-4 border-b border-slate-700">Trasa</th>
-                            <th className="p-4 border-b border-slate-700">Flota</th>
+                            <th className="p-4 border-b border-slate-700">Zasoby Flotowe</th>
                             <th className="p-4 border-b border-slate-700">Status</th>
                         </tr>
                         </thead>
@@ -132,7 +132,11 @@ export default function OrderManager() {
                                     </div>
                                 </td>
                                 <td className="p-4 text-sm text-slate-300">
-                                    {order.vehicle.plateNumber} ({order.driver ? `${order.driver.lastName}` : 'N/A'})
+                                    {order.vehicle?.plateNumber || <span className="text-slate-500 italic">Pojazd usunięty</span>}
+                                    <br/>
+                                    <span className="text-xs text-slate-400">
+                                        {order.driver ? `[#${order.driver.id}] ${order.driver.lastName}` : <span className="italic">Kierowca usunięty</span>}
+                                    </span>
                                 </td>
                                 <td className="p-4">{getStatusBadge(order.computedStatus, 1)}</td>
                             </tr>

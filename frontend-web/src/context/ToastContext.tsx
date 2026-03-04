@@ -16,7 +16,7 @@ interface ToastContextProps {
 const ToastContext = createContext<ToastContextProps | undefined>(undefined);
 
 export const ToastProvider: FC<{ children: ReactNode }> = ({ children }) => {
-    const [toasts, setToasts] = useState<Toast[]>([]);
+    const[toasts, setToasts] = useState<Toast[]>([]);
 
     const showToast = (message: string, type: ToastType = 'info') => {
         const id = Math.random().toString(36).substring(2, 9);
@@ -33,7 +33,7 @@ export const ToastProvider: FC<{ children: ReactNode }> = ({ children }) => {
     return (
         <ToastContext.Provider value={{ showToast }}>
             {children}
-            <div className="fixed bottom-6 right-6 z-[9999] flex flex-col gap-3 pointer-events-none">
+            <div className="fixed bottom-6 left-6 z-[9999] flex flex-col gap-3 pointer-events-none">
                 {toasts.map((toast) => (
                     <div key={toast.id} className={`pointer-events-auto flex items-center gap-3 px-4 py-3 rounded-xl border shadow-2xl backdrop-blur-md animate-[fadeIn_0.3s_ease-out] ${
                         toast.type === 'success' ? 'bg-emerald-500/10 border-emerald-500/50 text-emerald-400' :

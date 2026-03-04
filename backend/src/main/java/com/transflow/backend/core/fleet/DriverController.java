@@ -1,5 +1,7 @@
 package com.transflow.backend.fleet;
 
+import com.transflow.backend.logistics.Order;
+import com.transflow.backend.logistics.OrderRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
@@ -15,6 +17,7 @@ public class DriverController {
 
     private final DriverRepository driverRepository;
     private final VehicleRepository vehicleRepository;
+    private final OrderRepository orderRepository;
     private final SimpMessagingTemplate messagingTemplate;
 
     @GetMapping
@@ -30,7 +33,12 @@ public class DriverController {
     @PutMapping("/{id}")
     public ResponseEntity<DriverDTO> updateDriver(@PathVariable Long id, @RequestBody DriverDTO payload) {
         return driverRepository.findById(id)
-                .map(existingDriver -> processDriverSave(existingDriver, payload))
+                .map(existingDriver -> {
+                    if ("BUSY".equals(existingDriver.getStatus())) {
+                        throw new IllegalArgumentException("Edycja zablokowana - kierowca jest w trasie.");
+                    }
+                    return processDriverSave(existingDriver, payload);
+                })
                 .orElse(ResponseEntity.notFound().build());
     }
 
@@ -61,8 +69,19 @@ public class DriverController {
             if ("BUSY".equals(driver.getStatus())) {
                 throw new IllegalArgumentException("Nie można usunąć kierowcy w trasie.");
             }
+
+            driver.setAssignedVehicle(null);
+
+            List<Order> orders = orderRepository.findByDriverId(id);
+            for (Order order : orders) {
+                order.setDriver(null);
+            }
+            orderRepository.saveAll(orders);
+
             driverRepository.delete(driver);
+
             messagingTemplate.convertAndSend("/topic/updates", "DRIVERS");
+            messagingTemplate.convertAndSend("/topic/updates", "ORDERS");
             return ResponseEntity.ok().build();
         }).orElse(ResponseEntity.notFound().build());
     }

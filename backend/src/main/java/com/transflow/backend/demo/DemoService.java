@@ -16,6 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
 
 @Service
@@ -52,7 +53,9 @@ public class DemoService {
     private static final String[] MODELS = {"R450", "FH16", "TGX", "XF", "Actros"};
 
     @Transactional
-    public void seedLocations() {
+    public Map<String, Integer> seedLocations() {
+        int added = 0;
+        int skipped = 0;
         for (Object[] capital : EU_CAPITALS) {
             String name = (String) capital[0] + " Central Hub";
             if (!locationRepository.existsByName(name)) {
@@ -64,15 +67,19 @@ public class DemoService {
                 loc.setType((String) capital[3]);
                 loc.setAddress("Logistics Park 1, " + capital[0]);
                 locationRepository.save(loc);
+                added++;
+            } else {
+                skipped++;
             }
         }
+        return Map.of("added", added, "skipped", skipped);
     }
 
     @Transactional
-    public void seedFleetAndStaff() {
+    public Map<String, Integer> seedFleetAndStaff() {
         long currentCount = vehicleRepository.count();
         int toAdd = 50 - (int) currentCount;
-        if (toAdd <= 0) return;
+        if (toAdd <= 0) return Map.of("added", 0, "skipped", (int) currentCount);
 
         List<Location> locations = locationRepository.findAll();
         Random random = new Random();
@@ -110,6 +117,7 @@ public class DemoService {
 
             driverRepository.save(driver);
         }
+        return Map.of("added", toAdd, "skipped", (int) currentCount);
     }
 
     @Transactional

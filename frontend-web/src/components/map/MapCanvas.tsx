@@ -6,13 +6,17 @@ import VehicleLayer from './layers/VehicleLayer';
 import RouteLayer from './layers/RouteLayer';
 import OrderBuilder from './overlays/OrderBuilder';
 import ActiveOrdersPanel from './overlays/ActiveOrdersPanel';
+import InfoHUD from './overlays/InfoHUD';
 import { useSimulation } from '../../context/SimulationContext';
 import { MapProvider, useMapContext } from './MapContext';
 
 const MapEventsHandler = () => {
-    const { setSelectedRouteVehicleId } = useMapContext();
+    const { setSelectedRouteVehicleId, setSelectedLocationId } = useMapContext();
     useMapEvents({
-        click: () => setSelectedRouteVehicleId(null),
+        click: () => {
+            setSelectedRouteVehicleId(null);
+            setSelectedLocationId(null);
+        },
     });
     return null;
 };
@@ -42,6 +46,7 @@ const MapInner = () => {
 
             <OrderBuilder />
             <ActiveOrdersPanel />
+            <InfoHUD />
             <SimulationControls />
         </div>
     );

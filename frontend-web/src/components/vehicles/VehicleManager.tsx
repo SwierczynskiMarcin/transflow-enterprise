@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { Truck, Plus, Trash2, Edit2, X, User, Map as MapIcon, MapPin } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { Truck, Plus, Trash2, Edit2, X, User, Map as MapIcon, MapPin, AlertTriangle } from 'lucide-react';
 import { useSimulation } from '../../context/SimulationContext';
 import CoordinatePickerMap from '../locations/CoordinatePickerMap';
 import { getVehicles, addVehicle, updateVehicle, deleteVehicle } from '../../api/fleetApi';
@@ -10,8 +10,9 @@ export default function VehicleManager() {
     const { trucks, locations, orders } = useSimulation();
     const { showToast } = useToast();
     const[vehiclesData, setVehiclesData] = useState<any[]>([]);
+    const containerRef = useRef<HTMLDivElement>(null);
 
-    const [isFormOpen, setIsFormOpen] = useState(false);
+    const[isFormOpen, setIsFormOpen] = useState(false);
     const [editingId, setEditingId] = useState<number | null>(null);
     const [isPickerMapOpen, setIsPickerMapOpen] = useState(false);
 
@@ -62,13 +63,14 @@ export default function VehicleManager() {
         setLat(v.currentLat); setLng(v.currentLng);
         setEditingId(v.id);
         setIsFormOpen(true);
+        containerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
     const handleDelete = async (id: number) => {
         if (!confirm('Czy na pewno chcesz usunąć ten pojazd?')) return;
         try {
             await deleteVehicle(id);
-            showToast('Pojazd został usunięty', 'success');
+            showToast('Pojazd został usunięty z floty', 'success');
         } catch (error: any) {
             showToast(error.message, 'error');
         }
@@ -97,7 +99,7 @@ export default function VehicleManager() {
         if (!liveTruck) return <span className="text-slate-500 italic">Ładowanie...</span>;
 
         if (liveTruck.status === 'BUSY') {
-            const activeOrder = orders.find(o => o.vehicle.id === vehicleId && ['APPROACHING', 'LOADING', 'IN_TRANSIT'].includes(o.status));
+            const activeOrder = orders.find(o => o.vehicle && o.vehicle.id === vehicleId && ['APPROACHING', 'LOADING', 'IN_TRANSIT'].includes(o.status));
             if (activeOrder) {
                 return (
                     <span className="flex items-center gap-1 text-cyan-400 font-medium">
@@ -127,8 +129,10 @@ export default function VehicleManager() {
         }
     };
 
+    const isEditingBusy = editingId ? trucks.get(editingId)?.status === 'BUSY' : false;
+
     return (
-        <div className="p-8 h-full w-full overflow-y-auto bg-slate-900 text-slate-200 relative">
+        <div ref={containerRef} className="p-8 h-full w-full overflow-y-auto bg-slate-900 text-slate-200 relative">
 
             {isPickerMapOpen && (
                 <CoordinatePickerMap
@@ -149,22 +153,30 @@ export default function VehicleManager() {
             </div>
 
             {isFormOpen && (
-                <form onSubmit={handleSubmit} className="bg-slate-800 p-6 rounded-2xl border border-slate-700 mb-8 shadow-xl grid grid-cols-1 md:grid-cols-3 gap-4 border-l-4 border-l-cyan-400">
-                    <h2 className="md:col-span-3 text-lg font-bold text-white mb-2">{editingId ? 'Edytuj Pojazd' : 'Nowy Pojazd'}</h2>
-                    <div><label className="block text-xs text-slate-400 uppercase mb-1">Rejestracja</label><input required value={plate} onChange={e => setPlate(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white outline-none focus:border-cyan-400" /></div>
-                    <div><label className="block text-xs text-slate-400 uppercase mb-1">Marka</label><input required value={brand} onChange={e => setBrand(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white outline-none focus:border-cyan-400" /></div>
-                    <div><label className="block text-xs text-slate-400 uppercase mb-1">Model</label><input required value={model} onChange={e => setModel(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white outline-none focus:border-cyan-400" /></div>
-                    <div><label className="block text-xs text-slate-400 uppercase mb-1">Spalanie (L/100km)</label><input type="number" required value={consumption} onChange={e => setConsumption(Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white outline-none focus:border-cyan-400" /></div>
-                    <div><label className="block text-xs text-slate-400 uppercase mb-1">Pojemność Baku (L)</label><input type="number" required value={capacity} onChange={e => setCapacity(Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white outline-none focus:border-cyan-400" /></div>
+                <form onSubmit={handleSubmit} className={`p-6 rounded-2xl border mb-8 shadow-xl grid grid-cols-1 md:grid-cols-3 gap-4 border-l-4 ${isEditingBusy ? 'bg-slate-800/50 border-amber-500/50 border-l-amber-500' : 'bg-slate-800 border-slate-700 border-l-cyan-400'}`}>
+                    <div className="md:col-span-3 flex justify-between items-center mb-2">
+                        <h2 className="text-lg font-bold text-white">{editingId ? 'Edytuj Pojazd' : 'Nowy Pojazd'}</h2>
+                        {isEditingBusy && (
+                            <span className="flex items-center gap-2 text-amber-400 bg-amber-500/10 px-3 py-1 rounded-full text-xs font-bold uppercase">
+                                <AlertTriangle size={14} /> Pojazd w trasie - Edycja zablokowana
+                            </span>
+                        )}
+                    </div>
 
-                    <div className="flex gap-2 items-end md:col-span-3 bg-slate-900/50 p-3 rounded-xl border border-slate-700">
+                    <div><label className="block text-xs text-slate-400 uppercase mb-1">Rejestracja</label><input disabled={isEditingBusy} required value={plate} onChange={e => setPlate(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white outline-none focus:border-cyan-400 disabled:opacity-50 disabled:cursor-not-allowed" /></div>
+                    <div><label className="block text-xs text-slate-400 uppercase mb-1">Marka</label><input disabled={isEditingBusy} required value={brand} onChange={e => setBrand(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white outline-none focus:border-cyan-400 disabled:opacity-50 disabled:cursor-not-allowed" /></div>
+                    <div><label className="block text-xs text-slate-400 uppercase mb-1">Model</label><input disabled={isEditingBusy} required value={model} onChange={e => setModel(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white outline-none focus:border-cyan-400 disabled:opacity-50 disabled:cursor-not-allowed" /></div>
+                    <div><label className="block text-xs text-slate-400 uppercase mb-1">Spalanie (L/100km)</label><input disabled={isEditingBusy} type="number" required value={consumption} onChange={e => setConsumption(Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white outline-none focus:border-cyan-400 disabled:opacity-50 disabled:cursor-not-allowed" /></div>
+                    <div><label className="block text-xs text-slate-400 uppercase mb-1">Pojemność Baku (L)</label><input disabled={isEditingBusy} type="number" required value={capacity} onChange={e => setCapacity(Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white outline-none focus:border-cyan-400 disabled:opacity-50 disabled:cursor-not-allowed" /></div>
+
+                    <div className={`flex gap-2 items-end md:col-span-3 p-3 rounded-xl border ${isEditingBusy ? 'bg-slate-900/30 border-slate-700/50' : 'bg-slate-900/50 border-slate-700'}`}>
                         <div className="flex-1">
                             <label className="block text-xs text-slate-400 uppercase mb-1">Start Lat</label>
-                            <input type="number" step="0.000001" required value={lat} onChange={e => setLat(Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white outline-none focus:border-cyan-400" disabled={!!editingId} />
+                            <input type="number" step="0.000001" required value={lat} onChange={e => setLat(Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white outline-none focus:border-cyan-400 disabled:opacity-50 disabled:cursor-not-allowed" disabled={!!editingId} />
                         </div>
                         <div className="flex-1">
                             <label className="block text-xs text-slate-400 uppercase mb-1">Start Lng</label>
-                            <input type="number" step="0.000001" required value={lng} onChange={e => setLng(Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white outline-none focus:border-cyan-400" disabled={!!editingId} />
+                            <input type="number" step="0.000001" required value={lng} onChange={e => setLng(Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white outline-none focus:border-cyan-400 disabled:opacity-50 disabled:cursor-not-allowed" disabled={!!editingId} />
                         </div>
                         {!editingId && (
                             <button
@@ -179,11 +191,13 @@ export default function VehicleManager() {
                         )}
                     </div>
 
-                    <div className="md:col-span-3 flex justify-end mt-2">
-                        <button type="submit" className="bg-emerald-500 hover:bg-emerald-400 text-slate-900 font-bold py-2 px-8 rounded-xl transition">
-                            {editingId ? 'Zapisz Zmiany' : 'Dodaj Pojazd'}
-                        </button>
-                    </div>
+                    {!isEditingBusy && (
+                        <div className="md:col-span-3 flex justify-end mt-2">
+                            <button type="submit" className="bg-emerald-500 hover:bg-emerald-400 text-slate-900 font-bold py-2 px-8 rounded-xl transition">
+                                {editingId ? 'Zapisz Zmiany' : 'Dodaj Pojazd'}
+                            </button>
+                        </div>
+                    )}
                 </form>
             )}
 

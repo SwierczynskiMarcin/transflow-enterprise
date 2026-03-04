@@ -1,5 +1,7 @@
 package com.transflow.backend.fleet;
 
+import com.transflow.backend.logistics.Order;
+import com.transflow.backend.logistics.OrderRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
@@ -14,6 +16,8 @@ import java.util.List;
 public class VehicleController {
 
     private final VehicleRepository vehicleRepository;
+    private final DriverRepository driverRepository;
+    private final OrderRepository orderRepository;
     private final SimpMessagingTemplate messagingTemplate;
 
     @GetMapping
@@ -41,15 +45,17 @@ public class VehicleController {
     @PutMapping("/{id}")
     public ResponseEntity<VehicleDTO> updateVehicle(@PathVariable Long id, @RequestBody VehicleDTO dto) {
         return vehicleRepository.findById(id).map(vehicle -> {
+            if ("BUSY".equals(vehicle.getStatus())) {
+                throw new IllegalArgumentException("Edycja zablokowana - pojazd w trasie.");
+            }
             vehicle.setPlateNumber(dto.plateNumber());
             vehicle.setBrand(dto.brand());
             vehicle.setModel(dto.model());
             vehicle.setBaseFuelConsumption(dto.baseFuelConsumption());
             vehicle.setFuelCapacity(dto.fuelCapacity());
-            if (!"BUSY".equals(vehicle.getStatus())) {
-                vehicle.setCurrentLat(dto.currentLat());
-                vehicle.setCurrentLng(dto.currentLng());
-            }
+            vehicle.setCurrentLat(dto.currentLat());
+            vehicle.setCurrentLng(dto.currentLng());
+
             Vehicle saved = vehicleRepository.save(vehicle);
             messagingTemplate.convertAndSend("/topic/updates", "VEHICLES");
             return ResponseEntity.ok(VehicleDTO.from(saved));
@@ -62,9 +68,23 @@ public class VehicleController {
             if ("BUSY".equals(vehicle.getStatus())) {
                 throw new IllegalArgumentException("Nie można usunąć pojazdu, który jest w trasie.");
             }
+
+            driverRepository.findByAssignedVehicleId(id).ifPresent(driver -> {
+                driver.setAssignedVehicle(null);
+                driverRepository.save(driver);
+            });
+
+            List<Order> orders = orderRepository.findByVehicleId(id);
+            for (Order order : orders) {
+                order.setVehicle(null);
+            }
+            orderRepository.saveAll(orders);
+
             vehicleRepository.delete(vehicle);
+
             messagingTemplate.convertAndSend("/topic/updates", "VEHICLES");
             messagingTemplate.convertAndSend("/topic/updates", "DRIVERS");
+            messagingTemplate.convertAndSend("/topic/updates", "ORDERS");
             return ResponseEntity.ok().build();
         }).orElse(ResponseEntity.notFound().build());
     }

@@ -16,17 +16,17 @@ public class DemoController {
 
     @PostMapping("/seed-locations")
     public ResponseEntity<?> seedLocations() {
-        demoService.seedLocations();
+        var response = demoService.seedLocations();
         messagingTemplate.convertAndSend("/topic/updates", "LOCATIONS");
-        return ResponseEntity.ok().build();
+        return ResponseEntity.ok(response);
     }
 
     @PostMapping("/seed-fleet")
     public ResponseEntity<?> seedFleet() {
-        demoService.seedFleetAndStaff();
+        var response = demoService.seedFleetAndStaff();
         messagingTemplate.convertAndSend("/topic/updates", "VEHICLES");
         messagingTemplate.convertAndSend("/topic/updates", "DRIVERS");
-        return ResponseEntity.ok().build();
+        return ResponseEntity.ok(response);
     }
 
     @PostMapping("/auto-dispatch")

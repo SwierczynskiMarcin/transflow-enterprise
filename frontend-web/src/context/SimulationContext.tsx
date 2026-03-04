@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import { createContext, useContext, useEffect, useState, useCallback, type FC, type ReactNode } from 'react';
 import SockJS from 'sockjs-client';
 import { Client } from '@stomp/stompjs';
 import { getLocations, getActiveRoutes, getOrders } from '../api/logisticsApi';
@@ -57,8 +57,8 @@ export interface OrderData {
     id: number;
     startLocation: LocationData;
     endLocation: LocationData;
-    vehicle: VehicleData;
-    driver: { firstName: string, lastName: string } | null;
+    vehicle: VehicleData | null;
+    driver: { id: number; firstName: string; lastName: string } | null;
     cargoWeight: number;
     pricePerKm: number;
     status: string;
@@ -86,7 +86,7 @@ interface SimulationContextProps {
 
 const SimulationContext = createContext<SimulationContextProps | undefined>(undefined);
 
-export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+export const SimulationProvider: FC<{ children: ReactNode }> = ({ children }) => {
     const[trucks, setTrucks] = useState<Map<number, VehicleData>>(new Map());
     const [locations, setLocations] = useState<LocationData[]>([]);
     const[activeRoutes, setActiveRoutes] = useState<Map<number, ActiveRoute>>(new Map());
