@@ -1,3 +1,3 @@
-package com.transflow.backend.core.exception;
+package com.transflow.backend.exception;
 
 public record ErrorResponse(int status, String message) {}

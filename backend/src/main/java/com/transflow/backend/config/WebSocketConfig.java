@@ -1,4 +1,4 @@
-package com.transflow.backend.core.config;
+package com.transflow.backend.config;
 
 import org.springframework.context.annotation.Configuration;
 import org.springframework.messaging.simp.config.MessageBrokerRegistry;

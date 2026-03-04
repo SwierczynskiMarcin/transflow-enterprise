@@ -1,4 +1,4 @@
-package com.transflow.backend.core.exception;
+package com.transflow.backend.exception;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
