@@ -13,15 +13,16 @@ export default function VehicleManager() {
     const containerRef = useRef<HTMLDivElement>(null);
 
     const[isFormOpen, setIsFormOpen] = useState(false);
-    const [editingId, setEditingId] = useState<number | null>(null);
-    const [isPickerMapOpen, setIsPickerMapOpen] = useState(false);
+    const[editingId, setEditingId] = useState<number | null>(null);
+    const[isPickerMapOpen, setIsPickerMapOpen] = useState(false);
 
+    const [version, setVersion] = useState<number>(0);
     const[plate, setPlate] = useState('');
     const [brand, setBrand] = useState('');
     const[model, setModel] = useState('');
     const [consumption, setConsumption] = useState(25);
     const [capacity, setCapacity] = useState(600);
-    const [lat, setLat] = useState(52.2297);
+    const[lat, setLat] = useState(52.2297);
     const [lng, setLng] = useState(21.0122);
 
     useEffect(() => {
@@ -51,13 +52,14 @@ export default function VehicleManager() {
     }, [vehiclesData, trucks]);
 
     const resetForm = () => {
-        setPlate(''); setBrand(''); setModel(''); setConsumption(25); setCapacity(600); setLat(52.2297); setLng(21.0122);
+        setVersion(0); setPlate(''); setBrand(''); setModel(''); setConsumption(25); setCapacity(600); setLat(52.2297); setLng(21.0122);
         setEditingId(null);
         setIsFormOpen(false);
         setIsPickerMapOpen(false);
     };
 
     const handleEditClick = (v: any) => {
+        setVersion(v.version || 0);
         setPlate(v.plateNumber); setBrand(v.brand); setModel(v.model);
         setConsumption(v.baseFuelConsumption); setCapacity(v.fuelCapacity);
         setLat(v.currentLat); setLng(v.currentLng);
@@ -78,7 +80,7 @@ export default function VehicleManager() {
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        const payload = { plateNumber: plate, brand, model, baseFuelConsumption: consumption, fuelCapacity: capacity, currentLat: lat, currentLng: lng };
+        const payload = { version, plateNumber: plate, brand, model, baseFuelConsumption: consumption, fuelCapacity: capacity, currentLat: lat, currentLng: lng };
 
         try {
             if (editingId) {

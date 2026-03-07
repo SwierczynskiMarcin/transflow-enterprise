@@ -13,6 +13,9 @@ public class Order {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Version
+    private Long version = 0L;
+
     @ManyToOne @JoinColumn(name = "start_location_id")
     private Location startLocation;
 

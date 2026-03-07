@@ -34,6 +34,7 @@ export interface VehicleData {
     progress: number;
     gpsDistance: number;
     driverName?: string;
+    lastKinematicUpdate?: number;
 }
 
 export interface ActiveRoute {
@@ -73,11 +74,11 @@ interface SimulationContextProps {
     isPlaying: boolean;
     speed: number;
     virtualTime: string | null;
-    mapCenter: [number, number];
+    mapCenter:[number, number];
     mapZoom: number;
     togglePlay: () => Promise<void>;
     changeSpeed: (newSpeed: number) => Promise<void>;
-    setMapViewState: (center: [number, number], zoom: number) => void;
+    setMapViewState: (center:[number, number], zoom: number) => void;
     refreshVehicles: () => Promise<void>;
     refreshLocations: () => Promise<void>;
     refreshRoutes: () => Promise<void>;
@@ -88,11 +89,11 @@ const SimulationContext = createContext<SimulationContextProps | undefined>(unde
 
 export const SimulationProvider: FC<{ children: ReactNode }> = ({ children }) => {
     const[trucks, setTrucks] = useState<Map<number, VehicleData>>(new Map());
-    const [locations, setLocations] = useState<LocationData[]>([]);
+    const[locations, setLocations] = useState<LocationData[]>([]);
     const[activeRoutes, setActiveRoutes] = useState<Map<number, ActiveRoute>>(new Map());
     const[orders, setOrders] = useState<OrderData[]>([]);
     const [isPlaying, setIsPlaying] = useState(true);
-    const [speed, setSpeed] = useState(60);
+    const[speed, setSpeed] = useState(60);
     const[virtualTime, setVirtualTime] = useState<string | null>(null);
     const [mapCenter, setMapCenter] = useState<[number, number]>([52.0, 19.0]);
     const[mapZoom, setMapZoom] = useState<number>(6);
@@ -137,7 +138,7 @@ export const SimulationProvider: FC<{ children: ReactNode }> = ({ children }) =>
 
     const refreshVehicles = useCallback(async () => {
         try {
-            const [vehicles, drivers] = await Promise.all([
+            const[vehicles, drivers] = await Promise.all([
                 getVehicles(),
                 getDrivers()
             ]);
@@ -160,21 +161,33 @@ export const SimulationProvider: FC<{ children: ReactNode }> = ({ children }) =>
 
                 vehicles.forEach((v: any) => {
                     const existing = newMap.get(v.id);
-                    const isCurrentlyBusy = existing && existing.status === 'BUSY';
+                    const now = Date.now();
+                    const recentlyUpdatedByWS = existing?.lastKinematicUpdate && (now - existing.lastKinematicUpdate < 5000);
 
-                    newMap.set(v.id, {
-                        id: v.id,
-                        plateNumber: v.plateNumber,
-                        brand: v.brand,
-                        model: v.model,
-                        currentLat: isCurrentlyBusy ? existing.currentLat : (v.currentLat || 52.0),
-                        currentLng: isCurrentlyBusy ? existing.currentLng : (v.currentLng || 19.0),
-                        status: isCurrentlyBusy ? 'BUSY' : (v.status || 'AVAILABLE'),
-                        orderStatus: existing ? existing.orderStatus : undefined,
-                        progress: existing ? existing.progress : 0,
-                        gpsDistance: existing ? existing.gpsDistance : 0,
-                        driverName: driverMap.get(v.id) || 'Brak przypisania'
-                    });
+                    if (existing && recentlyUpdatedByWS) {
+                        newMap.set(v.id, {
+                            ...existing,
+                            plateNumber: v.plateNumber,
+                            brand: v.brand,
+                            model: v.model,
+                            driverName: driverMap.get(v.id) || 'Brak przypisania'
+                        });
+                    } else {
+                        newMap.set(v.id, {
+                            id: v.id,
+                            plateNumber: v.plateNumber,
+                            brand: v.brand,
+                            model: v.model,
+                            currentLat: v.currentLat || 52.0,
+                            currentLng: v.currentLng || 19.0,
+                            status: v.status || 'AVAILABLE',
+                            orderStatus: existing?.orderStatus,
+                            progress: existing?.progress || 0,
+                            gpsDistance: existing?.gpsDistance || 0,
+                            driverName: driverMap.get(v.id) || 'Brak przypisania',
+                            lastKinematicUpdate: existing?.lastKinematicUpdate || 0
+                        });
+                    }
                 });
                 return newMap;
             });
@@ -228,7 +241,8 @@ export const SimulationProvider: FC<{ children: ReactNode }> = ({ children }) =>
                                 orderStatus: isFinished ? undefined : dto.orderStatus,
                                 progress: isFinished ? 0 : dto.progress,
                                 gpsDistance: dto.gpsDistance,
-                                driverName: existing?.driverName || 'Brak przypisania'
+                                driverName: existing?.driverName || 'Brak przypisania',
+                                lastKinematicUpdate: Date.now()
                             });
                             changed = true;
                         }

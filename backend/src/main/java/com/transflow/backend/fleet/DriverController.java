@@ -5,6 +5,7 @@ import com.transflow.backend.logistics.OrderRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -36,6 +37,9 @@ public class DriverController {
                 .map(existingDriver -> {
                     if ("BUSY".equals(existingDriver.getStatus())) {
                         throw new IllegalArgumentException("Edycja zablokowana - kierowca jest w trasie.");
+                    }
+                    if (payload.version() != null && !existingDriver.getVersion().equals(payload.version())) {
+                        throw new ObjectOptimisticLockingFailureException(Driver.class, existingDriver.getId());
                     }
                     return processDriverSave(existingDriver, payload);
                 })

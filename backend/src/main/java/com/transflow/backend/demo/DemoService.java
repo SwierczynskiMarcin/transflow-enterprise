@@ -12,6 +12,7 @@ import com.transflow.backend.logistics.RoutingService;
 import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -125,6 +126,7 @@ public class DemoService {
         entityManager.createNativeQuery("TRUNCATE TABLE fuel_logs, orders, drivers, vehicles, locations RESTART IDENTITY CASCADE").executeUpdate();
     }
 
+    @Async
     public void autoDispatch(int count) {
         List<Vehicle> availableVehicles = vehicleRepository.findAll().stream()
                 .filter(v -> "AVAILABLE".equals(v.getStatus()))
@@ -164,7 +166,7 @@ public class DemoService {
             }
 
             try {
-                Thread.sleep(1000);
+                Thread.sleep(1000); // Usypia teraz dedykowany wątek tła, nie blokując HTTP Tomcata
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             }

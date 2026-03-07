@@ -10,6 +10,10 @@ public class Driver {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
+    @Version
+    private Long version = 0L;
+
     private String firstName;
     private String lastName;
     private String phoneNumber;
