@@ -1,6 +1,5 @@
 import { MapContainer, TileLayer, useMapEvents } from 'react-leaflet';
 import MapResizer from './MapResizer';
-import SimulationControls from './SimulationControls';
 import LocationLayer from './layers/LocationLayer';
 import VehicleLayer from './layers/VehicleLayer';
 import RouteLayer from './layers/RouteLayer';
@@ -47,7 +46,6 @@ const MapInner = () => {
             <OrderBuilder />
             <ActiveOrdersPanel />
             <InfoHUD />
-            <SimulationControls />
         </div>
     );
 };

@@ -46,11 +46,13 @@ const MemoizedTruckMarker = memo(({
         }
     }
 
+    const icon = useMemo(() => createTruckIcon(colorClass, glowColor, isSelected), [colorClass, glowColor, isSelected]);
+
     return (
         <Marker
             position={[truck.currentLat, truck.currentLng]}
-            icon={createTruckIcon(colorClass, glowColor, isSelected)}
-            zIndexOffset={isSelected ? 1000 : 500}
+            icon={icon}
+            zIndexOffset={isSelected ? 1500 : 500}
             eventHandlers={{
                 click: () => onSelect(truck.id),
                 mouseover: () => onHover(truck.id),

@@ -31,7 +31,7 @@ export default function ActiveOrdersPanel() {
     }
 
     return (
-        <div className="absolute top-6 right-6 z-[1000] w-80 bg-slate-900/80 backdrop-blur-xl rounded-2xl border border-slate-700 shadow-2xl overflow-hidden flex flex-col pointer-events-auto transition-all duration-300">
+        <div className="absolute top-6 right-6 z-[1000] w-80 bg-slate-900/80 backdrop-blur-xl rounded-2xl border border-slate-700 shadow-2xl overflow-hidden flex flex-col pointer-events-auto animate-[fadeIn_0.2s_ease-out]">
             <div className="p-4 bg-slate-800/50 border-b border-slate-700 flex items-center justify-between">
                 <div className="flex items-center gap-2">
                     <Activity size={18} className="text-cyan-400" />

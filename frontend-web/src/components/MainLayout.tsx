@@ -1,5 +1,5 @@
-import React from 'react';
-import { Map, ClipboardList, Truck, Users, MapPin, Settings, Clock } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Map, ClipboardList, Truck, Users, MapPin, Settings, Clock, Play, Pause } from 'lucide-react';
 import { useSimulation } from '../context/SimulationContext';
 
 interface MainLayoutProps {
@@ -9,12 +9,17 @@ interface MainLayoutProps {
 }
 
 export default function MainLayout({ currentView, onNavigate, children }: MainLayoutProps) {
-    const { virtualTime, isPlaying } = useSimulation();
+    const { virtualTime, isPlaying, speed, togglePlay, changeSpeed } = useSimulation();
+    const [localSpeed, setLocalSpeed] = useState(speed);
+
+    useEffect(() => { setLocalSpeed(speed); }, [speed]);
+
+    const handleSpeedCommit = () => { changeSpeed(localSpeed); };
 
     const formatDateTime = (isoString: string | null) => {
         if (!isoString) return { date: "Ładowanie...", time: "--:--" };
         try {
-            const [datePart, timePart] = isoString.split('T');
+            const[datePart, timePart] = isoString.split('T');
             const [year, month, day] = datePart.split('-');
             const [hour, minute] = timePart.split(':');
             return { date: `${day}.${month}.${year}`, time: `${hour}:${minute}` };
@@ -25,7 +30,7 @@ export default function MainLayout({ currentView, onNavigate, children }: MainLa
 
     const { date, time } = formatDateTime(virtualTime);
 
-    const navItems = [
+    const navItems =[
         { id: 'map', icon: Map, label: 'Mapa Live' },
         { id: 'orders', icon: ClipboardList, label: 'Zlecenia' },
         { id: 'vehicles', icon: Truck, label: 'Flota Pojazdów' },
@@ -66,7 +71,7 @@ export default function MainLayout({ currentView, onNavigate, children }: MainLa
                     </div>
                 </div>
 
-                <nav className="flex-1 py-4 flex flex-col gap-2 px-4 overflow-y-auto">
+                <nav className="flex-1 py-4 flex flex-col gap-2 px-4 overflow-y-auto scrollbar-thin scrollbar-thumb-slate-700">
                     <div className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1 px-2">Menu Główne</div>
 
                     {navItems.map(item => {
@@ -90,7 +95,33 @@ export default function MainLayout({ currentView, onNavigate, children }: MainLa
                     })}
                 </nav>
 
-                <div className="p-4 border-t border-slate-800 bg-slate-900">
+                <div className="p-4 border-t border-slate-800 bg-slate-900 flex flex-col gap-4">
+                    <div className="bg-slate-950 rounded-xl p-3 border border-slate-800 shadow-inner">
+                        <div className="flex justify-between items-center mb-3">
+                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Silnik Symulacji</span>
+                            <button
+                                onClick={togglePlay}
+                                className={`p-1.5 rounded-lg transition-colors ${isPlaying ? 'bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}
+                            >
+                                {isPlaying ? <Pause size={14} fill="currentColor" /> : <Play size={14} fill="currentColor" />}
+                            </button>
+                        </div>
+                        <div className="flex flex-col gap-2">
+                            <div className="flex justify-between items-center">
+                                <span className="text-[10px] text-slate-400 uppercase font-medium">Mnożnik Czasu</span>
+                                <span className="text-xs font-bold text-cyan-400">x{localSpeed}</span>
+                            </div>
+                            <input
+                                type="range" min="1" max="600" step="1"
+                                value={localSpeed}
+                                onChange={(e) => setLocalSpeed(Number(e.target.value))}
+                                onMouseUp={handleSpeedCommit}
+                                onTouchEnd={handleSpeedCommit}
+                                className="w-full accent-cyan-400 h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer"
+                            />
+                        </div>
+                    </div>
+
                     <div className="flex items-center gap-3 px-2">
                         <div className="w-8 h-8 rounded-full bg-cyan-500/20 flex items-center justify-center text-cyan-400 font-bold border border-cyan-500/30">
                             A

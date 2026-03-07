@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, memo } from 'react';
 import { Marker } from 'react-leaflet';
 import L from 'leaflet';
 import { renderToString } from 'react-dom/server';
@@ -33,6 +33,28 @@ const createLocationIcon = (type: string, truckCount: number, hasBusyTrucks: boo
     return L.divIcon({ className: 'bg-transparent border-none', html: htmlString, iconSize:[40, 40], iconAnchor:[20, 20] });
 };
 
+const MemoizedLocationMarker = memo(({ loc, truckCount, hasBusy, isSelected, onSelect, onHover, onHoverOut }: any) => {
+    const icon = useMemo(() => createLocationIcon(loc.type, truckCount, hasBusy, isSelected),[loc.type, truckCount, hasBusy, isSelected]);
+
+    return (
+        <Marker
+            position={[loc.latitude, loc.longitude]}
+            icon={icon}
+            zIndexOffset={isSelected ? 3000 : 2000}
+            eventHandlers={{
+                click: () => onSelect(loc.id),
+                mouseover: () => onHover(loc.id),
+                mouseout: () => onHoverOut()
+            }}
+        />
+    );
+}, (prev, next) => {
+    return prev.loc.id === next.loc.id &&
+        prev.truckCount === next.truckCount &&
+        prev.hasBusy === next.hasBusy &&
+        prev.isSelected === next.isSelected;
+});
+
 export default function LocationLayer() {
     const { locations, trucks } = useSimulation();
     const { setSelectedLocationId, setHoveredLocationId, selectedLocationId } = useMapContext();
@@ -60,16 +82,15 @@ export default function LocationLayer() {
                 const isSelected = selectedLocationId === loc.id;
 
                 return (
-                    <Marker
+                    <MemoizedLocationMarker
                         key={`loc-${loc.id}`}
-                        position={[loc.latitude, loc.longitude]}
-                        icon={createLocationIcon(loc.type, parkedInHub.length, hasBusy, isSelected)}
-                        zIndexOffset={isSelected ? 1000 : 500}
-                        eventHandlers={{
-                            click: () => { setSelectedLocationId(loc.id); },
-                            mouseover: () => { setHoveredLocationId(loc.id); },
-                            mouseout: () => { setHoveredLocationId(null); }
-                        }}
+                        loc={loc}
+                        truckCount={parkedInHub.length}
+                        hasBusy={hasBusy}
+                        isSelected={isSelected}
+                        onSelect={setSelectedLocationId}
+                        onHover={setHoveredLocationId}
+                        onHoverOut={() => setHoveredLocationId(null)}
                     />
                 );
             })}
