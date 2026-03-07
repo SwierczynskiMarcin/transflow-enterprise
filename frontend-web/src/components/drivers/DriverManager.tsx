@@ -14,14 +14,14 @@ export default function DriverManager() {
     const[drivers, setDrivers] = useState<DriverDB[]>([]);
     const [vehicles, setVehicles] = useState<VehicleDB[]>([]);
     const[isFormOpen, setIsFormOpen] = useState(false);
-    const [editingId, setEditingId] = useState<number | null>(null);
+    const[editingId, setEditingId] = useState<number | null>(null);
     const containerRef = useRef<HTMLDivElement>(null);
 
-    const [version, setVersion] = useState<number>(0);
+    const[version, setVersion] = useState<number>(0);
     const[firstName, setFirstName] = useState('');
     const [lastName, setLastName] = useState('');
     const[phone, setPhone] = useState('');
-    const [selectedVehicleId, setSelectedVehicleId] = useState<string>('');
+    const[selectedVehicleId, setSelectedVehicleId] = useState<string>('');
 
     const loadData = async () => {
         try {
@@ -42,6 +42,9 @@ export default function DriverManager() {
 
             const statusA = liveTruckA ? liveTruckA.status : a.status;
             const statusB = liveTruckB ? liveTruckB.status : b.status;
+
+            if (statusA === 'BROKEN' && statusB !== 'BROKEN') return -1;
+            if (statusA !== 'BROKEN' && statusB === 'BROKEN') return 1;
 
             if (statusA === 'BUSY' && statusB !== 'BUSY') return -1;
             if (statusA !== 'BUSY' && statusB === 'BUSY') return 1;
@@ -113,6 +116,38 @@ export default function DriverManager() {
 
         if (!liveTruck) return <span className="text-slate-500 italic">Ładowanie...</span>;
 
+        if (liveTruck.status === 'WAITING_FOR_TOW') {
+            return (
+                <span className="flex items-center gap-1 text-slate-400 font-bold border border-slate-600 px-2 py-0.5 rounded text-xs">
+                    ZJECHAŁ Z TRASY (AUTO WRAK)
+                </span>
+            );
+        }
+
+        if (liveTruck.status === 'HANDOVER') {
+            return (
+                <span className="flex items-center gap-1 text-fuchsia-400 font-bold animate-pulse">
+                    PRZEŁADUNEK Z WRAKU
+                </span>
+            );
+        }
+
+        if (liveTruck.status === 'BROKEN') {
+            return (
+                <span className="flex items-center gap-1 text-rose-400 font-bold animate-pulse">
+                    <AlertTriangle size={14} /> POJAZD USZKODZONY
+                </span>
+            );
+        }
+
+        if (liveTruck.status === 'RESCUE_MISSION' || liveTruck.status === 'RESCUE_ARRIVED') {
+            return (
+                <span className="flex items-center gap-1 text-indigo-400 font-bold">
+                    <Truck size={14} /> JEDZIE Z POMOCĄ TECHNICZNĄ
+                </span>
+            );
+        }
+
         if (liveTruck.status === 'BUSY') {
             const activeOrder = orders.find(o => o.vehicle && o.vehicle.id === vehicleId &&['APPROACHING', 'LOADING', 'IN_TRANSIT'].includes(o.status));
             if (activeOrder) {
@@ -148,7 +183,7 @@ export default function DriverManager() {
         !drivers.some(d => d.assignedVehicle?.id === v.id && d.id !== editingId)
     );
 
-    const isEditingBusy = editingId ? drivers.find(d => d.id === editingId)?.status === 'BUSY' : false;
+    const isEditingBusy = editingId ? (drivers.find(d => d.id === editingId)?.status === 'BUSY' || drivers.find(d => d.id === editingId)?.status === 'BROKEN' || trucks.get(editingId)?.status === 'RESCUE_MISSION' || trucks.get(editingId)?.status === 'HANDOVER' || trucks.get(editingId)?.status === 'WAITING_FOR_TOW') : false;
 
     return (
         <div ref={containerRef} className="p-8 h-full w-full overflow-y-auto bg-slate-900 text-slate-200 relative">
@@ -165,7 +200,7 @@ export default function DriverManager() {
                         <h2 className="text-lg font-bold text-white">{editingId ? 'Edytuj Kierowcę' : 'Nowy Kierowca'}</h2>
                         {isEditingBusy && (
                             <span className="flex items-center gap-2 text-amber-400 bg-amber-500/10 px-3 py-1 rounded-full text-xs font-bold uppercase">
-                                <AlertTriangle size={14} /> Kierowca w trasie - Edycja zablokowana
+                                <AlertTriangle size={14} /> Blokada edycji - trasa/awaria
                             </span>
                         )}
                     </div>

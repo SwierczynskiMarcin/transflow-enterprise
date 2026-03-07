@@ -1,7 +1,11 @@
-import { MapPin, Flag, Truck, Building2, User } from 'lucide-react';
+import { useState } from 'react';
+import { MapPin, Flag, Truck, Building2, User, AlertTriangle, Loader2, Wrench } from 'lucide-react';
 import { useMapContext } from '../MapContext';
 import { useSimulation, type LocationData, type VehicleData } from '../../../context/SimulationContext';
 import { calculateDistance } from '../../../utils/mapUtils';
+import { triggerBreakdown } from '../../../api/fleetApi';
+import { autoAssignRescue } from '../../../api/logisticsApi';
+import { useToast } from '../../../context/ToastContext';
 
 export default function InfoHUD() {
     const {
@@ -10,6 +14,9 @@ export default function InfoHUD() {
         setIsBuilderOpen, setStartLoc, setEndLoc, setSelectedTruckId
     } = useMapContext();
     const { trucks, locations } = useSimulation();
+    const { showToast } = useToast();
+
+    const [isSimulatingBreakdown, setIsSimulatingBreakdown] = useState(false);
 
     let targetType: 'none' | 'vehicle' | 'location' = 'none';
     let vehicleData: VehicleData | null = null;
@@ -25,7 +32,7 @@ export default function InfoHUD() {
     const handleSetStart = (loc: LocationData) => {
         setStartLoc(loc);
         setIsBuilderOpen(true);
-        const avail = Array.from(trucks.values()).filter(t => t.status === 'AVAILABLE');
+        const avail = Array.from(trucks.values()).filter(t => t.status === 'AVAILABLE' && !t.isServiceUnit);
         if (avail.length > 0) {
             let closest = avail[0];
             let min = calculateDistance(loc.latitude, loc.longitude, closest.currentLat, closest.currentLng);
@@ -39,47 +46,113 @@ export default function InfoHUD() {
         }
     };
 
+    const handleBreakdown = async () => {
+        if (!vehicleData) return;
+        const targetId = vehicleData.id;
+        setIsSimulatingBreakdown(true);
+        try {
+            await triggerBreakdown(targetId);
+            showToast('Awaria zgłoszona! System autonomiczny przejmuje inicjatywę...', 'error');
+
+            setTimeout(async () => {
+                try {
+                    await autoAssignRescue(targetId);
+                    showToast('Sukces. Ratownik Cargo oraz jednostka MSU zostały zadysponowane!', 'success');
+                } catch (error: any) {
+                    showToast(error.message, 'error');
+                } finally {
+                    setIsSimulatingBreakdown(false);
+                }
+            }, 1500);
+
+        } catch (error: any) {
+            showToast(error.message, 'error');
+            setIsSimulatingBreakdown(false);
+        }
+    };
+
+    const isAlertBlocked = vehicleData?.status === 'BROKEN' || vehicleData?.status === 'WAITING_FOR_TOW' || vehicleData?.status === 'BEING_TOWED' || vehicleData?.isServiceUnit;
+    const IconComponent = vehicleData?.isServiceUnit ? Wrench : Truck;
+
     return (
         <div className="absolute bottom-8 right-6 z-[1000] w-80 bg-slate-900/95 backdrop-blur-xl rounded-2xl border border-slate-700 shadow-[0_10px_40px_rgba(0,0,0,0.5)] overflow-hidden flex flex-col pointer-events-auto animate-[fadeIn_0.2s_ease-out]">
 
             {targetType === 'vehicle' && vehicleData && (
                 <>
-                    <div className={`p-4 border-b ${vehicleData.status === 'BUSY' ? 'border-cyan-500/30 bg-cyan-950/20' : 'border-emerald-500/30 bg-emerald-950/20'} flex items-center justify-between`}>
+                    <div className={`p-4 border-b ${vehicleData.status === 'BROKEN' ? 'border-rose-500/30 bg-rose-950/20' : vehicleData.status === 'WAITING_FOR_TOW' || vehicleData.status === 'BEING_TOWED' ? 'border-slate-500/30 bg-slate-900/50' : vehicleData.status === 'HANDOVER' || vehicleData.status === 'WAITING_FOR_CARGO_CLEARANCE' ? 'border-fuchsia-500/30 bg-fuchsia-950/20' : vehicleData.status === 'RESCUE_MISSION' || vehicleData.orderStatus === 'RESCUE_APPROACHING' ? 'border-indigo-500/30 bg-indigo-950/20' : vehicleData.status === 'TOW_APPROACHING' || vehicleData.status === 'TOWING' ? 'border-orange-500/30 bg-orange-950/20' : vehicleData.status === 'BUSY' ? 'border-cyan-500/30 bg-cyan-950/20' : vehicleData.isServiceUnit ? 'border-orange-500/30 bg-orange-950/10' : 'border-emerald-500/30 bg-emerald-950/20'} flex items-center justify-between`}>
                         <div className="flex items-center gap-3">
-                            <div className={`p-2 rounded-xl ${vehicleData.status === 'BUSY' ? 'bg-cyan-500/20 text-cyan-400' : 'bg-emerald-500/20 text-emerald-400'}`}>
-                                <Truck size={20} />
+                            <div className={`p-2 rounded-xl ${vehicleData.status === 'BROKEN' ? 'bg-rose-500/20 text-rose-400' : vehicleData.status === 'WAITING_FOR_TOW' || vehicleData.status === 'BEING_TOWED' ? 'bg-slate-800 text-slate-400' : vehicleData.status === 'HANDOVER' || vehicleData.status === 'WAITING_FOR_CARGO_CLEARANCE' ? 'bg-fuchsia-500/20 text-fuchsia-400' : vehicleData.status === 'RESCUE_MISSION' || vehicleData.orderStatus === 'RESCUE_APPROACHING' ? 'bg-indigo-500/20 text-indigo-400' : vehicleData.status === 'TOW_APPROACHING' || vehicleData.status === 'TOWING' ? 'bg-orange-500/20 text-orange-400' : vehicleData.status === 'BUSY' ? 'bg-cyan-500/20 text-cyan-400' : vehicleData.isServiceUnit ? 'bg-orange-500/10 text-orange-500' : 'bg-emerald-500/20 text-emerald-400'}`}>
+                                <IconComponent size={20} />
                             </div>
                             <div className="flex flex-col">
-                                <span className="text-white font-bold text-base leading-tight">{vehicleData.plateNumber}</span>
+                                <span className="text-white font-bold text-base leading-tight flex items-center gap-2">
+                                    {vehicleData.plateNumber}
+                                    {vehicleData.isServiceUnit && <span className="text-[9px] bg-orange-500 text-white px-1.5 py-0.5 rounded">MSU</span>}
+                                </span>
                                 <span className="text-xs text-slate-400">{vehicleData.brand} {vehicleData.model}</span>
                             </div>
                         </div>
                         <span className="relative flex h-3 w-3">
-                            <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${vehicleData.status === 'BUSY' ? 'bg-cyan-400' : 'bg-emerald-400'}`}></span>
-                            <span className={`relative inline-flex rounded-full h-3 w-3 ${vehicleData.status === 'BUSY' ? 'bg-cyan-500' : 'bg-emerald-500'}`}></span>
+                            <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${vehicleData.status === 'BROKEN' ? 'bg-rose-400' : vehicleData.status === 'WAITING_FOR_TOW' || vehicleData.status === 'BEING_TOWED' ? 'bg-slate-500' : vehicleData.status === 'HANDOVER' || vehicleData.status === 'WAITING_FOR_CARGO_CLEARANCE' ? 'bg-fuchsia-400' : vehicleData.status === 'RESCUE_MISSION' || vehicleData.orderStatus === 'RESCUE_APPROACHING' ? 'bg-indigo-400' : vehicleData.status === 'TOW_APPROACHING' || vehicleData.status === 'TOWING' ? 'bg-orange-400' : vehicleData.status === 'BUSY' ? 'bg-cyan-400' : vehicleData.isServiceUnit ? 'bg-orange-400' : 'bg-emerald-400'}`}></span>
+                            <span className={`relative inline-flex rounded-full h-3 w-3 ${vehicleData.status === 'BROKEN' ? 'bg-rose-500' : vehicleData.status === 'WAITING_FOR_TOW' || vehicleData.status === 'BEING_TOWED' ? 'bg-slate-500' : vehicleData.status === 'HANDOVER' || vehicleData.status === 'WAITING_FOR_CARGO_CLEARANCE' ? 'bg-fuchsia-500' : vehicleData.status === 'RESCUE_MISSION' || vehicleData.orderStatus === 'RESCUE_APPROACHING' ? 'bg-indigo-500' : vehicleData.status === 'TOW_APPROACHING' || vehicleData.status === 'TOWING' ? 'bg-orange-500' : vehicleData.status === 'BUSY' ? 'bg-cyan-500' : vehicleData.isServiceUnit ? 'bg-orange-500' : 'bg-emerald-500'}`}></span>
                         </span>
                     </div>
                     <div className="p-4 flex flex-col gap-3">
                         <div className="flex items-center gap-2 text-sm text-slate-300">
                             <User size={16} className="text-slate-500" />
-                            <span>{vehicleData.driverName || 'Brak przypisania'}</span>
+                            <span>{vehicleData.status === 'WAITING_FOR_TOW' || vehicleData.status === 'BEING_TOWED' ? 'Kierowca zjechał' : vehicleData.driverName || 'Brak przypisania'}</span>
                         </div>
 
                         <div className="bg-slate-800/80 rounded-xl p-3 border border-slate-700/50">
-                            {vehicleData.status === 'BUSY' ? (
+                            {(vehicleData.status !== 'AVAILABLE') ? (
                                 <div className="flex flex-col gap-2">
                                     <div className="flex justify-between items-center text-xs font-bold uppercase tracking-wider">
-                                        <span className={vehicleData.orderStatus === 'APPROACHING' ? 'text-amber-400' : vehicleData.orderStatus === 'LOADING' ? 'text-blue-400' : 'text-cyan-400'}>
-                                            {vehicleData.orderStatus === 'APPROACHING' ? 'Dojazd' : vehicleData.orderStatus === 'LOADING' ? 'Załadunek' : 'W Trasie'}
+                                        <span className={vehicleData.status === 'BROKEN' ? 'text-rose-400' : vehicleData.status === 'WAITING_FOR_TOW' || vehicleData.status === 'BEING_TOWED' ? 'text-slate-400' : vehicleData.status === 'HANDOVER' || vehicleData.status === 'WAITING_FOR_CARGO_CLEARANCE' ? 'text-fuchsia-400' : vehicleData.status === 'RESCUE_MISSION' || vehicleData.orderStatus === 'RESCUE_APPROACHING' ? 'text-indigo-400' : vehicleData.status === 'TOW_APPROACHING' ? 'text-orange-400' : vehicleData.status === 'TOWING' ? 'text-orange-500' : vehicleData.orderStatus === 'APPROACHING' ? 'text-amber-400' : vehicleData.orderStatus === 'LOADING' ? 'text-blue-400' : 'text-cyan-400'}>
+                                            {vehicleData.status === 'BROKEN' ? 'AWARIA KRYTYCZNA' : vehicleData.status === 'WAITING_FOR_TOW' ? 'Oczekuje na holownik' : vehicleData.status === 'BEING_TOWED' ? 'Holowany do bazy' : vehicleData.status === 'HANDOVER' || vehicleData.status === 'WAITING_FOR_CARGO_CLEARANCE' ? 'Postój Operacyjny' : vehicleData.status === 'RESCUE_MISSION' || vehicleData.orderStatus === 'RESCUE_APPROACHING' ? 'Misja Ratunkowa' : vehicleData.status === 'TOW_APPROACHING' ? 'W drodze do wraku' : vehicleData.status === 'TOWING' ? 'Holowanie wraku' : vehicleData.orderStatus === 'APPROACHING' ? 'Dojazd' : vehicleData.orderStatus === 'LOADING' ? 'Załadunek' : 'W Trasie'}
                                         </span>
-                                        <span className="text-white">{vehicleData.orderStatus !== 'LOADING' ? `${(vehicleData.progress * 100).toFixed(1)}%` : 'WAIT'}</span>
+                                        <span className="text-white">{vehicleData.orderStatus !== 'LOADING' && vehicleData.status !== 'HANDOVER' && vehicleData.status !== 'WAITING_FOR_CARGO_CLEARANCE' && vehicleData.status !== 'WAITING_FOR_TOW' && vehicleData.status !== 'BEING_TOWED' ? `${(vehicleData.progress * 100).toFixed(1)}%` : (vehicleData.status === 'WAITING_FOR_TOW' || vehicleData.status === 'BEING_TOWED') ? 'WRAK' : 'WAIT'}</span>
                                     </div>
                                     <div className="w-full bg-slate-900 rounded-full h-1.5 overflow-hidden">
-                                        <div className={`h-full transition-all duration-1000 ${vehicleData.orderStatus === 'APPROACHING' ? 'bg-amber-400' : vehicleData.orderStatus === 'LOADING' ? 'bg-blue-400' : 'bg-cyan-400'}`} style={{ width: vehicleData.orderStatus === 'LOADING' ? '100%' : `${vehicleData.progress * 100}%` }}></div>
+                                        <div className={`h-full transition-all duration-1000 ${vehicleData.status === 'BROKEN' ? 'bg-rose-500' : vehicleData.status === 'WAITING_FOR_TOW' || vehicleData.status === 'BEING_TOWED' ? 'bg-slate-600' : vehicleData.status === 'HANDOVER' || vehicleData.status === 'WAITING_FOR_CARGO_CLEARANCE' ? 'bg-fuchsia-500' : vehicleData.status === 'RESCUE_MISSION' || vehicleData.orderStatus === 'RESCUE_APPROACHING' ? 'bg-indigo-500' : vehicleData.status === 'TOW_APPROACHING' || vehicleData.status === 'TOWING' ? 'bg-orange-500' : vehicleData.orderStatus === 'APPROACHING' ? 'bg-amber-400' : vehicleData.orderStatus === 'LOADING' ? 'bg-blue-400' : 'bg-cyan-400'}`} style={{ width: vehicleData.orderStatus === 'LOADING' || vehicleData.status === 'HANDOVER' || vehicleData.status === 'WAITING_FOR_CARGO_CLEARANCE' || vehicleData.status === 'WAITING_FOR_TOW' || vehicleData.status === 'BEING_TOWED' ? '100%' : `${vehicleData.progress * 100}%` }}></div>
                                     </div>
+
+                                    {!isAlertBlocked && (
+                                        <button onClick={handleBreakdown} disabled={isSimulatingBreakdown} className="mt-2 w-full flex items-center justify-center gap-2 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 text-xs py-2 rounded-xl font-bold transition-colors disabled:opacity-50">
+                                            {isSimulatingBreakdown ? <Loader2 size={14} className="animate-spin" /> : <AlertTriangle size={14} />}
+                                            {isSimulatingBreakdown ? 'PRZETWARZANIE...' : 'SYMULUJ AWARIĘ'}
+                                        </button>
+                                    )}
+
+                                    {vehicleData.status === 'WAITING_FOR_TOW' && (
+                                        <div className="mt-2 text-[10px] text-center text-slate-500 uppercase font-bold tracking-wider">
+                                            Gotowy do usunięcia przez MSU
+                                        </div>
+                                    )}
+
+                                    {vehicleData.status === 'BROKEN' && (
+                                        <div className="mt-3 border-t border-slate-700/50 pt-3">
+                                            {isSimulatingBreakdown ? (
+                                                <div className="flex items-center justify-center gap-2 bg-cyan-900/30 border border-cyan-500/50 text-cyan-400 text-xs py-2 rounded-xl font-bold shadow-[0_0_15px_rgba(34,211,238,0.2)]">
+                                                    <Loader2 size={14} className="animate-spin" /> ANALIZOWANIE FLOTY...
+                                                </div>
+                                            ) : (
+                                                <div className="text-center text-xs font-bold text-slate-400 uppercase tracking-wider py-1">
+                                                    Wrak oczekuje na wsparcie
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
                                 </div>
                             ) : (
-                                <span className="text-emerald-400 text-sm font-bold block text-center uppercase tracking-wider">Oczekuje na zlecenie</span>
+                                <div className="flex flex-col gap-2">
+                                    <span className="text-emerald-400 text-sm font-bold block text-center uppercase tracking-wider">Oczekuje na zlecenie</span>
+                                    {!isAlertBlocked && (
+                                        <button onClick={handleBreakdown} disabled={isSimulatingBreakdown} className="mt-2 w-full flex items-center justify-center gap-2 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 text-xs py-2 rounded-xl font-bold transition-colors disabled:opacity-50">
+                                            {isSimulatingBreakdown ? <Loader2 size={14} className="animate-spin" /> : <AlertTriangle size={14} />}
+                                            {isSimulatingBreakdown ? 'PRZETWARZANIE...' : 'SYMULUJ AWARIĘ'}
+                                        </button>
+                                    )}
+                                </div>
                             )}
                         </div>
                     </div>

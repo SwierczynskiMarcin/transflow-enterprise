@@ -69,7 +69,7 @@ public class OrderService {
 
     public List<ActiveRouteDTO> getActiveRoutes() {
         return orderRepository.findAll().stream()
-                .filter(o -> List.of("APPROACHING", "LOADING", "IN_TRANSIT").contains(o.getStatus()))
+                .filter(o -> List.of("APPROACHING", "LOADING", "IN_TRANSIT", "RESCUE_APPROACHING").contains(o.getStatus()))
                 .map(o -> new ActiveRouteDTO(
                         o.getVehicle().getId(),
                         o.getRoutePolylineApproaching(),

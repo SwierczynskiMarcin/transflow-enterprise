@@ -83,9 +83,39 @@ public class DemoService {
         if (toAdd <= 0) return Map.of("added", 0, "skipped", (int) currentCount);
 
         List<Location> locations = locationRepository.findAll();
+        List<Location> bases = locations.stream().filter(l -> "BASE".equals(l.getType())).toList();
         Random random = new Random();
 
-        for (int i = 0; i < toAdd; i++) {
+        // Dodanie 5 jednostek MSU
+        for (int i = 0; i < Math.min(5, toAdd); i++) {
+            Vehicle msu = new Vehicle();
+            msu.setPlateNumber("MSU" + String.format("%04d", random.nextInt(10000)));
+            msu.setBrand("Volvo");
+            msu.setModel("FMX Recovery");
+            msu.setBaseFuelConsumption(35.0);
+            msu.setFuelCapacity(1000.0);
+            msu.setStatus("AVAILABLE");
+            msu.setIsServiceUnit(true);
+            msu.setCurrentOdometer(random.nextDouble() * 100000.0);
+
+            Location loc = bases.isEmpty() ? (!locations.isEmpty() ? locations.get(0) : null) : bases.get(random.nextInt(bases.size()));
+            if (loc != null) {
+                msu.setCurrentLat(loc.getLatitude() + (random.nextDouble() - 0.5) * 0.01);
+                msu.setCurrentLng(loc.getLongitude() + (random.nextDouble() - 0.5) * 0.01);
+            } else {
+                msu.setCurrentLat(52.2297); msu.setCurrentLng(21.0122);
+            }
+
+            Vehicle saved = vehicleRepository.save(msu);
+            Driver driver = new Driver();
+            driver.setFirstName("Serwisant"); driver.setLastName(LAST_NAMES[random.nextInt(LAST_NAMES.length)]);
+            driver.setPhoneNumber("+48 800" + random.nextInt(999999));
+            driver.setStatus("AVAILABLE");
+            driver.setAssignedVehicle(saved);
+            driverRepository.save(driver);
+        }
+
+        for (int i = 5; i < toAdd; i++) {
             Vehicle vehicle = new Vehicle();
             String plate = (char)(random.nextInt(26) + 'A') + "" + (char)(random.nextInt(26) + 'A') + String.format("%05d", random.nextInt(100000));
             vehicle.setPlateNumber(plate);
@@ -96,6 +126,7 @@ public class DemoService {
             vehicle.setFuelCapacity(600.0 + random.nextInt(4) * 100.0);
             vehicle.setStatus("AVAILABLE");
             vehicle.setCurrentOdometer(random.nextDouble() * 500000.0);
+            vehicle.setIsServiceUnit(false);
 
             if (!locations.isEmpty()) {
                 Location randomLoc = locations.get(random.nextInt(locations.size()));
@@ -129,7 +160,7 @@ public class DemoService {
     @Async
     public void autoDispatch(int count) {
         List<Vehicle> availableVehicles = vehicleRepository.findAll().stream()
-                .filter(v -> "AVAILABLE".equals(v.getStatus()))
+                .filter(v -> "AVAILABLE".equals(v.getStatus()) && !Boolean.TRUE.equals(v.getIsServiceUnit()))
                 .filter(v -> driverRepository.findAll().stream().anyMatch(d -> d.getAssignedVehicle() != null && d.getAssignedVehicle().getId().equals(v.getId()) && "AVAILABLE".equals(d.getStatus())))
                 .limit(count)
                 .toList();
@@ -166,7 +197,7 @@ public class DemoService {
             }
 
             try {
-                Thread.sleep(1000); // Usypia teraz dedykowany wątek tła, nie blokując HTTP Tomcata
+                Thread.sleep(1000);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             }

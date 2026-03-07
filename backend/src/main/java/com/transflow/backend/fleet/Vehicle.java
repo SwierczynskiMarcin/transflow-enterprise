@@ -23,4 +23,13 @@ public class Vehicle {
     private Double currentLat;
     private Double currentLng;
     private Double currentOdometer = 0.0;
+
+    private Long targetRescueId;
+
+    @Column(columnDefinition = "TEXT")
+    private String rescuePolyline;
+    private Double rescueDistance;
+
+    private Boolean isServiceUnit = false;
+    private Long targetTowId;
 }

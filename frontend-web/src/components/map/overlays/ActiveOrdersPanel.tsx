@@ -6,9 +6,9 @@ import { useMapContext } from '../MapContext';
 export default function ActiveOrdersPanel() {
     const { trucks } = useSimulation();
     const { selectedRouteVehicleId, setSelectedRouteVehicleId } = useMapContext();
-    const [isCollapsed, setIsCollapsed] = useState(false);
+    const[isCollapsed, setIsCollapsed] = useState(false);
 
-    const activeTrucks = Array.from(trucks.values()).filter(t => t.status === 'BUSY');
+    const activeTrucks = Array.from(trucks.values()).filter(t => t.status !== 'AVAILABLE' && t.status !== 'WAITING_FOR_TOW' && t.status !== 'BEING_TOWED');
 
     if (isCollapsed) {
         return (
@@ -25,7 +25,7 @@ export default function ActiveOrdersPanel() {
                         </span>
                     )}
                 </div>
-                <span className="text-white font-bold pr-3 text-sm tracking-wide">{activeTrucks.length} w trasie</span>
+                <span className="text-white font-bold pr-3 text-sm tracking-wide">{activeTrucks.length} w akcji</span>
             </div>
         );
     }
@@ -47,29 +47,32 @@ export default function ActiveOrdersPanel() {
             <div className="p-4 flex-1 min-h-[150px] max-h-[400px] overflow-y-auto scrollbar-thin scrollbar-thumb-slate-700">
                 {activeTrucks.length === 0 ? (
                     <div className="h-full flex flex-col items-center justify-center text-slate-400 text-sm gap-2 mt-4">
-                        <span>Brak aktywnych zleceń.</span><span className="text-xs">Wszystkie pojazdy czekają w bazach.</span>
+                        <span>Brak aktywnych operacji.</span><span className="text-xs">Wszystkie pojazdy czekają w bazach.</span>
                     </div>
                 ) : (
                     <div className="space-y-4">
                         {activeTrucks.map(truck => (
                             <div
                                 key={truck.id}
-                                className={`bg-slate-800/80 rounded-xl p-3 border transition-colors cursor-pointer ${truck.id === selectedRouteVehicleId ? 'border-cyan-500 shadow-[0_0_15px_rgba(34,211,238,0.2)]' : 'border-slate-700/50 hover:border-slate-500'}`}
+                                className={`bg-slate-800/80 rounded-xl p-3 border transition-colors cursor-pointer ${truck.id === selectedRouteVehicleId ? 'border-cyan-500 shadow-[0_0_15px_rgba(34,211,238,0.2)]' : truck.status === 'BROKEN' ? 'border-rose-500/50 hover:border-rose-500' : truck.status === 'TOW_APPROACHING' || truck.status === 'TOWING' ? 'border-orange-500/50 hover:border-orange-500' : truck.status === 'RESCUE_MISSION' || truck.status === 'HANDOVER' || truck.status === 'WAITING_FOR_CARGO_CLEARANCE' ? 'border-indigo-500/50 hover:border-indigo-500' : 'border-slate-700/50 hover:border-slate-500'}`}
                                 onClick={() => setSelectedRouteVehicleId(truck.id)}
                             >
                                 <div className="flex justify-between items-center mb-2">
                                     <div className="flex flex-col">
-                                        <span className="text-white font-bold text-sm">{truck.plateNumber}</span>
-                                        <span className={`text-[10px] font-bold uppercase tracking-wider ${truck.orderStatus === 'APPROACHING' ? 'text-amber-400' : truck.orderStatus === 'LOADING' ? 'text-blue-400' : 'text-cyan-400'}`}>
-                                            {truck.orderStatus === 'APPROACHING' ? 'Dojazd do punktu A' : truck.orderStatus === 'LOADING' ? 'Załadunek towaru' : 'W trasie do B'}
+                                        <span className="text-white font-bold text-sm flex items-center gap-2">
+                                            {truck.plateNumber}
+                                            {truck.isServiceUnit && <span className="text-[8px] bg-orange-500 text-white px-1 rounded uppercase">MSU</span>}
+                                        </span>
+                                        <span className={`text-[10px] font-bold uppercase tracking-wider ${truck.status === 'BROKEN' ? 'text-rose-400 animate-pulse' : truck.status === 'TOW_APPROACHING' ? 'text-orange-400' : truck.status === 'TOWING' ? 'text-orange-500' : truck.status === 'RESCUE_MISSION' || truck.orderStatus === 'RESCUE_APPROACHING' ? 'text-indigo-400' : truck.status === 'HANDOVER' || truck.status === 'WAITING_FOR_CARGO_CLEARANCE' ? 'text-fuchsia-400' : truck.orderStatus === 'APPROACHING' ? 'text-amber-400' : truck.orderStatus === 'LOADING' ? 'text-blue-400' : 'text-cyan-400'}`}>
+                                            {truck.status === 'BROKEN' ? 'AWARIA POJAZDU' : truck.status === 'TOW_APPROACHING' ? 'MSU Dojazd do wraku' : truck.status === 'TOWING' ? 'MSU Holowanie' : truck.status === 'RESCUE_MISSION' || truck.orderStatus === 'RESCUE_APPROACHING' ? 'Misja Ratunkowa' : truck.status === 'HANDOVER' || truck.status === 'WAITING_FOR_CARGO_CLEARANCE' ? 'Przeładunek Techniczny' : truck.orderStatus === 'APPROACHING' ? 'Dojazd do punktu A' : truck.orderStatus === 'LOADING' ? 'Załadunek towaru' : 'W trasie do B'}
                                         </span>
                                     </div>
-                                    <span className={`text-xs font-bold ${truck.orderStatus === 'APPROACHING' ? 'text-amber-400' : truck.orderStatus === 'LOADING' ? 'text-blue-400' : 'text-cyan-400'}`}>
-                                        {truck.orderStatus === 'LOADING' ? 'WAIT' : `${(truck.progress * 100).toFixed(0)}%`}
+                                    <span className={`text-xs font-bold ${truck.status === 'BROKEN' ? 'text-rose-400' : truck.status === 'TOW_APPROACHING' || truck.status === 'TOWING' ? 'text-orange-400' : truck.status === 'RESCUE_MISSION' || truck.orderStatus === 'RESCUE_APPROACHING' ? 'text-indigo-400' : truck.status === 'HANDOVER' || truck.status === 'WAITING_FOR_CARGO_CLEARANCE' ? 'text-fuchsia-400' : truck.orderStatus === 'APPROACHING' ? 'text-amber-400' : truck.orderStatus === 'LOADING' ? 'text-blue-400' : 'text-cyan-400'}`}>
+                                        {truck.orderStatus === 'LOADING' || truck.status === 'HANDOVER' || truck.status === 'WAITING_FOR_CARGO_CLEARANCE' ? 'WAIT' : `${(truck.progress * 100).toFixed(0)}%`}
                                     </span>
                                 </div>
                                 <div className="w-full bg-slate-900 rounded-full h-1.5 overflow-hidden">
-                                    <div className={`h-full transition-all duration-1000 ${truck.orderStatus === 'APPROACHING' ? 'bg-amber-400' : truck.orderStatus === 'LOADING' ? 'bg-blue-400' : 'bg-cyan-400'}`} style={{ width: truck.orderStatus === 'LOADING' ? '100%' : `${truck.progress * 100}%` }}></div>
+                                    <div className={`h-full transition-all duration-1000 ${truck.status === 'BROKEN' ? 'bg-rose-500' : truck.status === 'TOW_APPROACHING' || truck.status === 'TOWING' ? 'bg-orange-500' : truck.status === 'RESCUE_MISSION' || truck.orderStatus === 'RESCUE_APPROACHING' ? 'bg-indigo-500' : truck.status === 'HANDOVER' || truck.status === 'WAITING_FOR_CARGO_CLEARANCE' ? 'bg-fuchsia-500' : truck.orderStatus === 'APPROACHING' ? 'bg-amber-400' : truck.orderStatus === 'LOADING' ? 'bg-blue-400' : 'bg-cyan-400'}`} style={{ width: truck.orderStatus === 'LOADING' || truck.status === 'HANDOVER' || truck.status === 'WAITING_FOR_CARGO_CLEARANCE' ? '100%' : `${truck.progress * 100}%` }}></div>
                                 </div>
                             </div>
                         ))}

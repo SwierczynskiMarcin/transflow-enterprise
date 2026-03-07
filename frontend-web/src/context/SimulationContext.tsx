@@ -5,7 +5,7 @@ import { getLocations, getActiveRoutes, getOrders } from '../api/logisticsApi';
 import { getVehicles, getDrivers } from '../api/fleetApi';
 import { getSimulationStatus, toggleSimulation, setSimulationSpeed } from '../api/simulationApi';
 
-export const decodePolyline = (str: string, precision = 5): [number, number][] => {
+export const decodePolyline = (str: string, precision = 5):[number, number][] => {
     if (!str) return[];
     let index = 0, lat = 0, lng = 0, coordinates:[number, number][] =[], shift = 0, result = 0, byte = null;
     const factor = Math.pow(10, precision);
@@ -35,6 +35,7 @@ export interface VehicleData {
     gpsDistance: number;
     driverName?: string;
     lastKinematicUpdate?: number;
+    isServiceUnit: boolean;
 }
 
 export interface ActiveRoute {
@@ -95,7 +96,7 @@ export const SimulationProvider: FC<{ children: ReactNode }> = ({ children }) =>
     const [isPlaying, setIsPlaying] = useState(true);
     const[speed, setSpeed] = useState(60);
     const[virtualTime, setVirtualTime] = useState<string | null>(null);
-    const [mapCenter, setMapCenter] = useState<[number, number]>([52.0, 19.0]);
+    const[mapCenter, setMapCenter] = useState<[number, number]>([52.0, 19.0]);
     const[mapZoom, setMapZoom] = useState<number>(6);
 
     const refreshLocations = useCallback(async () => {
@@ -119,7 +120,7 @@ export const SimulationProvider: FC<{ children: ReactNode }> = ({ children }) =>
                 const newMap = new Map(prev);
                 data.forEach(r => {
                     const truck = newMap.get(r.vehicleId);
-                    if (truck && truck.orderStatus !== r.orderStatus && truck.status === 'BUSY') {
+                    if (truck && truck.orderStatus !== r.orderStatus && (truck.status === 'BUSY' || truck.status === 'TOW_APPROACHING' || truck.status === 'TOWING')) {
                         newMap.set(r.vehicleId, { ...truck, orderStatus: r.orderStatus });
                         changed = true;
                     }
@@ -164,12 +165,16 @@ export const SimulationProvider: FC<{ children: ReactNode }> = ({ children }) =>
                     const now = Date.now();
                     const recentlyUpdatedByWS = existing?.lastKinematicUpdate && (now - existing.lastKinematicUpdate < 5000);
 
-                    if (existing && recentlyUpdatedByWS) {
+                    const criticalStates =['WAITING_FOR_TOW', 'BROKEN', 'RESCUE_MISSION', 'HANDOVER', 'BEING_TOWED', 'WAITING_FOR_CARGO_CLEARANCE', 'TOW_APPROACHING', 'TOWING'];
+                    const forceOverride = existing?.status !== v.status && (criticalStates.includes(v.status) || criticalStates.includes(existing?.status || ''));
+
+                    if (existing && recentlyUpdatedByWS && !forceOverride) {
                         newMap.set(v.id, {
                             ...existing,
                             plateNumber: v.plateNumber,
                             brand: v.brand,
                             model: v.model,
+                            isServiceUnit: v.isServiceUnit,
                             driverName: driverMap.get(v.id) || 'Brak przypisania'
                         });
                     } else {
@@ -178,12 +183,13 @@ export const SimulationProvider: FC<{ children: ReactNode }> = ({ children }) =>
                             plateNumber: v.plateNumber,
                             brand: v.brand,
                             model: v.model,
+                            isServiceUnit: v.isServiceUnit,
                             currentLat: v.currentLat || 52.0,
                             currentLng: v.currentLng || 19.0,
                             status: v.status || 'AVAILABLE',
-                            orderStatus: existing?.orderStatus,
-                            progress: existing?.progress || 0,
-                            gpsDistance: existing?.gpsDistance || 0,
+                            orderStatus: forceOverride && !criticalStates.includes(v.status) ? undefined : existing?.orderStatus,
+                            progress: forceOverride ? 0 : (existing?.progress || 0),
+                            gpsDistance: forceOverride ? 0 : (existing?.gpsDistance || 0),
                             driverName: driverMap.get(v.id) || 'Brak przypisania',
                             lastKinematicUpdate: existing?.lastKinematicUpdate || 0
                         });
@@ -241,6 +247,7 @@ export const SimulationProvider: FC<{ children: ReactNode }> = ({ children }) =>
                                 orderStatus: isFinished ? undefined : dto.orderStatus,
                                 progress: isFinished ? 0 : dto.progress,
                                 gpsDistance: dto.gpsDistance,
+                                isServiceUnit: existing?.isServiceUnit || false,
                                 driverName: existing?.driverName || 'Brak przypisania',
                                 lastKinematicUpdate: Date.now()
                             });
@@ -264,6 +271,7 @@ export const SimulationProvider: FC<{ children: ReactNode }> = ({ children }) =>
                     if (type === 'ORDERS') {
                         refreshRoutes();
                         refreshOrders();
+                        refreshVehicles();
                     }
                 });
             }

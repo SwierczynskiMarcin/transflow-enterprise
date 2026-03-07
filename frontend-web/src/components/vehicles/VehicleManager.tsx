@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Truck, Plus, Trash2, Edit2, X, User, Map as MapIcon, MapPin, AlertTriangle } from 'lucide-react';
+import { Truck, Plus, Trash2, Edit2, X, User, Map as MapIcon, MapPin, AlertTriangle, Wrench } from 'lucide-react';
 import { useSimulation } from '../../context/SimulationContext';
 import CoordinatePickerMap from '../locations/CoordinatePickerMap';
 import { getVehicles, addVehicle, updateVehicle, deleteVehicle } from '../../api/fleetApi';
@@ -18,12 +18,13 @@ export default function VehicleManager() {
 
     const [version, setVersion] = useState<number>(0);
     const[plate, setPlate] = useState('');
-    const [brand, setBrand] = useState('');
+    const[brand, setBrand] = useState('');
     const[model, setModel] = useState('');
-    const [consumption, setConsumption] = useState(25);
+    const[consumption, setConsumption] = useState(25);
     const [capacity, setCapacity] = useState(600);
     const[lat, setLat] = useState(52.2297);
-    const [lng, setLng] = useState(21.0122);
+    const[lng, setLng] = useState(21.0122);
+    const[isMSU, setIsMSU] = useState(false);
 
     useEffect(() => {
         const fetchDBData = async () => {
@@ -44,6 +45,9 @@ export default function VehicleManager() {
             const statusA = liveA ? liveA.status : a.status;
             const statusB = liveB ? liveB.status : b.status;
 
+            if (statusA === 'BROKEN' && statusB !== 'BROKEN') return -1;
+            if (statusA !== 'BROKEN' && statusB === 'BROKEN') return 1;
+
             if (statusA === 'BUSY' && statusB !== 'BUSY') return -1;
             if (statusA !== 'BUSY' && statusB === 'BUSY') return 1;
 
@@ -52,7 +56,7 @@ export default function VehicleManager() {
     }, [vehiclesData, trucks]);
 
     const resetForm = () => {
-        setVersion(0); setPlate(''); setBrand(''); setModel(''); setConsumption(25); setCapacity(600); setLat(52.2297); setLng(21.0122);
+        setVersion(0); setPlate(''); setBrand(''); setModel(''); setConsumption(25); setCapacity(600); setLat(52.2297); setLng(21.0122); setIsMSU(false);
         setEditingId(null);
         setIsFormOpen(false);
         setIsPickerMapOpen(false);
@@ -62,7 +66,7 @@ export default function VehicleManager() {
         setVersion(v.version || 0);
         setPlate(v.plateNumber); setBrand(v.brand); setModel(v.model);
         setConsumption(v.baseFuelConsumption); setCapacity(v.fuelCapacity);
-        setLat(v.currentLat); setLng(v.currentLng);
+        setLat(v.currentLat); setLng(v.currentLng); setIsMSU(v.isServiceUnit);
         setEditingId(v.id);
         setIsFormOpen(true);
         containerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
@@ -80,7 +84,7 @@ export default function VehicleManager() {
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        const payload = { version, plateNumber: plate, brand, model, baseFuelConsumption: consumption, fuelCapacity: capacity, currentLat: lat, currentLng: lng };
+        const payload = { version, plateNumber: plate, brand, model, baseFuelConsumption: consumption, fuelCapacity: capacity, currentLat: lat, currentLng: lng, isServiceUnit: isMSU };
 
         try {
             if (editingId) {
@@ -100,8 +104,64 @@ export default function VehicleManager() {
         const liveTruck = trucks.get(vehicleId);
         if (!liveTruck) return <span className="text-slate-500 italic">Ładowanie...</span>;
 
+        if (liveTruck.status === 'BROKEN') {
+            return (
+                <span className="flex items-center gap-1 text-rose-400 font-bold animate-pulse">
+                    <AlertTriangle size={14} /> AWARIA NA TRASIE
+                </span>
+            );
+        }
+
+        if (liveTruck.status === 'WAITING_FOR_TOW') {
+            return (
+                <span className="flex items-center gap-1 text-slate-400 font-bold border border-slate-600 px-2 py-0.5 rounded text-xs">
+                    WRAK (OCZEKUJE NA MSU)
+                </span>
+            );
+        }
+
+        if (liveTruck.status === 'BEING_TOWED') {
+            return (
+                <span className="flex items-center gap-1 text-slate-500 font-bold">
+                    HOLOWANY DO BAZY
+                </span>
+            );
+        }
+
+        if (liveTruck.status === 'HANDOVER' || liveTruck.status === 'WAITING_FOR_CARGO_CLEARANCE') {
+            return (
+                <span className="flex items-center gap-1 text-fuchsia-400 font-bold animate-pulse">
+                    POSTÓJ OPERACYJNY NA TRASIE
+                </span>
+            );
+        }
+
+        if (liveTruck.status === 'RESCUE_MISSION') {
+            return (
+                <span className="flex items-center gap-1 text-indigo-400 font-bold">
+                    <Truck size={14} /> W DRODZE PO ŁADUNEK Z WRAKA
+                </span>
+            );
+        }
+
+        if (liveTruck.status === 'TOW_APPROACHING') {
+            return (
+                <span className="flex items-center gap-1 text-orange-400 font-bold">
+                    <Wrench size={14} /> MSU ZMIERZA DO WRAKA
+                </span>
+            );
+        }
+
+        if (liveTruck.status === 'TOWING') {
+            return (
+                <span className="flex items-center gap-1 text-orange-500 font-bold">
+                    <Wrench size={14} /> MSU HOLUJE WRAK
+                </span>
+            );
+        }
+
         if (liveTruck.status === 'BUSY') {
-            const activeOrder = orders.find(o => o.vehicle && o.vehicle.id === vehicleId && ['APPROACHING', 'LOADING', 'IN_TRANSIT'].includes(o.status));
+            const activeOrder = orders.find(o => o.vehicle && o.vehicle.id === vehicleId &&['APPROACHING', 'LOADING', 'IN_TRANSIT'].includes(o.status));
             if (activeOrder) {
                 return (
                     <span className="flex items-center gap-1 text-cyan-400 font-medium">
@@ -127,11 +187,11 @@ export default function VehicleManager() {
                     </span>
                 );
             }
-            return <span className="text-slate-400">Postój na trasie</span>;
+            return <span className="text-slate-400">Oczekuje na przypisanie</span>;
         }
     };
 
-    const isEditingBusy = editingId ? trucks.get(editingId)?.status === 'BUSY' : false;
+    const isEditingBusy = editingId ? (trucks.get(editingId)?.status !== 'AVAILABLE') : false;
 
     return (
         <div ref={containerRef} className="p-8 h-full w-full overflow-y-auto bg-slate-900 text-slate-200 relative">
@@ -160,7 +220,7 @@ export default function VehicleManager() {
                         <h2 className="text-lg font-bold text-white">{editingId ? 'Edytuj Pojazd' : 'Nowy Pojazd'}</h2>
                         {isEditingBusy && (
                             <span className="flex items-center gap-2 text-amber-400 bg-amber-500/10 px-3 py-1 rounded-full text-xs font-bold uppercase">
-                                <AlertTriangle size={14} /> Pojazd w trasie - Edycja zablokowana
+                                <AlertTriangle size={14} /> Edycja zablokowana - pojazd w trakcie operacji
                             </span>
                         )}
                     </div>
@@ -170,6 +230,13 @@ export default function VehicleManager() {
                     <div><label className="block text-xs text-slate-400 uppercase mb-1">Model</label><input disabled={isEditingBusy} required value={model} onChange={e => setModel(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white outline-none focus:border-cyan-400 disabled:opacity-50 disabled:cursor-not-allowed" /></div>
                     <div><label className="block text-xs text-slate-400 uppercase mb-1">Spalanie (L/100km)</label><input disabled={isEditingBusy} type="number" required value={consumption} onChange={e => setConsumption(Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white outline-none focus:border-cyan-400 disabled:opacity-50 disabled:cursor-not-allowed" /></div>
                     <div><label className="block text-xs text-slate-400 uppercase mb-1">Pojemność Baku (L)</label><input disabled={isEditingBusy} type="number" required value={capacity} onChange={e => setCapacity(Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white outline-none focus:border-cyan-400 disabled:opacity-50 disabled:cursor-not-allowed" /></div>
+
+                    <div className="flex items-center gap-3">
+                        <input type="checkbox" id="msuCheck" disabled={isEditingBusy} checked={isMSU} onChange={e => setIsMSU(e.target.checked)} className="w-5 h-5 accent-orange-500 cursor-pointer disabled:cursor-not-allowed" />
+                        <label htmlFor="msuCheck" className="text-sm font-bold text-orange-400 uppercase tracking-wide cursor-pointer flex items-center gap-2">
+                            <Wrench size={16} /> Mobilna Jednostka Serwisowa (MSU)
+                        </label>
+                    </div>
 
                     <div className={`flex gap-2 items-end md:col-span-3 p-3 rounded-xl border ${isEditingBusy ? 'bg-slate-900/30 border-slate-700/50' : 'bg-slate-900/50 border-slate-700'}`}>
                         <div className="flex-1">
@@ -219,16 +286,19 @@ export default function VehicleManager() {
                         const liveData = trucks.get(v.id);
                         return (
                             <tr key={v.id} className="hover:bg-slate-700/50 border-b border-slate-700/50 transition-colors duration-300">
-                                <td className="p-4 font-bold text-white">{v.plateNumber}</td>
+                                <td className="p-4 font-bold text-white flex items-center gap-2">
+                                    {v.plateNumber}
+                                    {v.isServiceUnit && <span className="text-[10px] bg-orange-500 text-white px-2 py-0.5 rounded uppercase tracking-wider">MSU</span>}
+                                </td>
                                 <td className="p-4">{v.brand} {v.model}</td>
                                 <td className="p-4">
-                                    {liveData && liveData.driverName && liveData.driverName !== 'Brak przypisania' ? (
+                                    {liveData && liveData.status !== 'WAITING_FOR_TOW' && liveData.status !== 'BEING_TOWED' && liveData.driverName && liveData.driverName !== 'Brak przypisania' ? (
                                         <span className="flex items-center gap-2 text-slate-300">
                                             <User size={14} className="text-slate-500" />
                                             {liveData.driverName}
                                         </span>
                                     ) : (
-                                        <span className="text-slate-500 italic">Brak kierowcy</span>
+                                        <span className="text-slate-500 italic">Zjechał / Brak</span>
                                     )}
                                 </td>
                                 <td className="p-4 text-sm">
