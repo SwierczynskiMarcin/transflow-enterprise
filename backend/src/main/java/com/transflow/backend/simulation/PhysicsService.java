@@ -3,14 +3,22 @@ package com.transflow.backend.simulation;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 public class PhysicsService {
 
-    private final Map<String, List<double[]>> polylineCache = new ConcurrentHashMap<>();
+    private final Map<String, List<double[]>> polylineCache = Collections.synchronizedMap(
+            new LinkedHashMap<String, List<double[]>>(100, 0.75f, true) {
+                @Override
+                protected boolean removeEldestEntry(Map.Entry<String, List<double[]>> eldest) {
+                    return size() > 1000;
+                }
+            }
+    );
 
     public double calculateDistance(double lat1, double lon1, double lat2, double lon2) {
         double theta = lon1 - lon2;

@@ -14,6 +14,7 @@ import java.util.List;
 public class LocationController {
 
     private final LocationRepository locationRepository;
+    private final OrderRepository orderRepository;
     private final SimpMessagingTemplate messagingTemplate;
 
     @GetMapping
@@ -52,6 +53,9 @@ public class LocationController {
 
     @DeleteMapping("/{id}")
     public ResponseEntity<?> deleteLocation(@PathVariable Long id) {
+        if (orderRepository.existsByStartLocationIdOrEndLocationId(id, id)) {
+            throw new IllegalArgumentException("Nie można usunąć lokalizacji, która jest używana w zleceniach operacyjnych.");
+        }
         return locationRepository.findById(id).map(loc -> {
             locationRepository.delete(loc);
             messagingTemplate.convertAndSend("/topic/updates", "LOCATIONS");

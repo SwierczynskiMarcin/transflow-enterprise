@@ -65,9 +65,11 @@ export default function LocationLayer() {
 
         Array.from(trucks.values()).forEach(truck => {
             for (const loc of locations) {
-                if (calculateDistance(truck.currentLat, truck.currentLng, loc.latitude, loc.longitude) <= 0.5) {
-                    parked.get(loc.id)!.push(truck);
-                    break;
+                if (Math.abs(truck.currentLat - loc.latitude) < 0.01 && Math.abs(truck.currentLng - loc.longitude) < 0.01) {
+                    if (calculateDistance(truck.currentLat, truck.currentLng, loc.latitude, loc.longitude) <= 0.5) {
+                        parked.get(loc.id)!.push(truck);
+                        break;
+                    }
                 }
             }
         });

@@ -14,13 +14,10 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
@@ -44,7 +41,6 @@ public class SimulationEngine {
     private double timeMultiplier = 60.0;
 
     @Scheduled(fixedRate = 2000)
-    @Transactional
     public void simulateMovement() {
         messagingTemplate.convertAndSend("/topic/simulation",
                 new SimulationStateDTO(isRunning, timeMultiplier, virtualClock.getCurrentTime()));
@@ -54,13 +50,10 @@ public class SimulationEngine {
         virtualClock.advanceTime(TICK_RATE_SECONDS, timeMultiplier);
 
         List<Order> activeOrders = orderRepository.findByStatusIn(List.of("APPROACHING", "LOADING", "IN_TRANSIT", "RESCUE_APPROACHING", "HANDOVER", "TOW_APPROACHING", "WAITING_FOR_CARGO_CLEARANCE", "TOWING"));
-
         List<VehicleSimulationDTO> tickUpdates = new ArrayList<>();
-        List<Order> ordersToSave = new ArrayList<>();
-        Set<Vehicle> vehiclesToSave = new HashSet<>();
 
-        try {
-            for (Order order : activeOrders) {
+        for (Order order : activeOrders) {
+            try {
                 Vehicle vehicle = order.getVehicle();
 
                 if ("BROKEN".equals(vehicle.getStatus()) || "WAITING_FOR_TOW".equals(vehicle.getStatus()) || "BEING_TOWED".equals(vehicle.getStatus())) {
@@ -92,6 +85,8 @@ public class SimulationEngine {
 
                         vehicle.setCurrentLat(newPos[0]);
                         vehicle.setCurrentLng(newPos[1]);
+                    } else {
+                        order.setProgress(1.0);
                     }
 
                     vehicle.setCurrentOdometer(vehicle.getCurrentOdometer() + distanceInTickKm);
@@ -144,6 +139,8 @@ public class SimulationEngine {
 
                         vehicle.setCurrentLat(newPos[0]);
                         vehicle.setCurrentLng(newPos[1]);
+                    } else {
+                        order.setProgress(1.0);
                     }
 
                     vehicle.setCurrentOdometer(vehicle.getCurrentOdometer() + distanceInTickKm);
@@ -173,8 +170,8 @@ public class SimulationEngine {
                                     vehicle.setStatus("BUSY");
                                     vehicle.setTargetRescueId(null);
 
-                                    ordersToSave.add(brokenCargoOrder);
-                                    vehiclesToSave.add(brokenVehicle);
+                                    orderRepository.save(brokenCargoOrder);
+                                    vehicleRepository.save(brokenVehicle);
                                 } else if (brokenCargoOrder != null) {
                                     Order technicalOrder = new Order();
                                     technicalOrder.setVehicle(vehicle);
@@ -194,7 +191,7 @@ public class SimulationEngine {
                                     technicalOrder.setGpsDistance(0.0);
 
                                     vehicle.setStatus("RESCUE_MISSION");
-                                    ordersToSave.add(technicalOrder);
+                                    orderRepository.save(technicalOrder);
                                 } else {
                                     vehicle.setStatus("AVAILABLE");
                                     vehicle.setTargetRescueId(null);
@@ -221,6 +218,8 @@ public class SimulationEngine {
 
                         vehicle.setCurrentLat(newPos[0]);
                         vehicle.setCurrentLng(newPos[1]);
+                    } else {
+                        order.setProgress(1.0);
                     }
 
                     vehicle.setCurrentOdometer(vehicle.getCurrentOdometer() + distanceInTickKm);
@@ -243,8 +242,8 @@ public class SimulationEngine {
                                 vehicle.setStatus("HANDOVER");
                                 brokenVehicle.setStatus("WAITING_FOR_TOW");
 
-                                ordersToSave.add(brokenCargoOrder);
-                                vehiclesToSave.add(brokenVehicle);
+                                orderRepository.save(brokenCargoOrder);
+                                vehicleRepository.save(brokenVehicle);
                             } else {
                                 vehicle.setStatus("AVAILABLE");
                                 vehicle.setTargetRescueId(null);
@@ -266,6 +265,8 @@ public class SimulationEngine {
 
                         vehicle.setCurrentLat(newPos[0]);
                         vehicle.setCurrentLng(newPos[1]);
+                    } else {
+                        order.setProgress(1.0);
                     }
 
                     vehicle.setCurrentOdometer(vehicle.getCurrentOdometer() + distanceInTickKm);
@@ -307,13 +308,15 @@ public class SimulationEngine {
 
                         vehicle.setCurrentLat(newPos[0]);
                         vehicle.setCurrentLng(newPos[1]);
+                    } else {
+                        order.setProgress(1.0);
                     }
 
                     Vehicle target = vehicleRepository.findById(vehicle.getTargetTowId()).orElse(null);
                     if (target != null) {
                         target.setCurrentLat(vehicle.getCurrentLat());
                         target.setCurrentLng(vehicle.getCurrentLng());
-                        vehiclesToSave.add(target);
+                        vehicleRepository.save(target);
 
                         tickUpdates.add(new VehicleSimulationDTO(
                                 target.getId(), target.getPlateNumber(), target.getBrand(), target.getModel(),
@@ -337,29 +340,22 @@ public class SimulationEngine {
                     }
                 }
 
-                vehiclesToSave.add(vehicle);
-                ordersToSave.add(order);
+                vehicleRepository.save(vehicle);
+                orderRepository.save(order);
 
                 tickUpdates.add(new VehicleSimulationDTO(
                         vehicle.getId(), vehicle.getPlateNumber(), vehicle.getBrand(), vehicle.getModel(),
                         vehicle.getCurrentLat(), vehicle.getCurrentLng(), vehicle.getStatus(), order.getStatus(),
                         order.getProgress(), order.getGpsDistance()
                 ));
-            }
 
-            if (!vehiclesToSave.isEmpty()) {
-                vehicleRepository.saveAll(vehiclesToSave);
+            } catch (ObjectOptimisticLockingFailureException e) {
+                System.err.println("[SimulationEngine] Tick pominiety dla pojazdu ID: " + order.getVehicle().getId() + " - wykryto modyfikacje zewnetrzna.");
             }
-            if (!ordersToSave.isEmpty()) {
-                orderRepository.saveAll(ordersToSave);
-            }
+        }
 
-            if (!tickUpdates.isEmpty()) {
-                messagingTemplate.convertAndSend("/topic/trucks", tickUpdates);
-            }
-
-        } catch (ObjectOptimisticLockingFailureException e) {
-            System.err.println("[SimulationEngine] Tick pominięty: Wykryto współbieżną modyfikację danych (Optimistic Lock).");
+        if (!tickUpdates.isEmpty()) {
+            messagingTemplate.convertAndSend("/topic/trucks", tickUpdates);
         }
     }
 

@@ -22,7 +22,7 @@ export default function OrderBuilder() {
     } = useMapContext();
 
     const [isSubmitting, setIsSubmitting] = useState(false);
-    const [isFetchingRoute, setIsFetchingRoute] = useState(false);
+    const[isFetchingRoute, setIsFetchingRoute] = useState(false);
 
     const availableTrucks = Array.from(trucks.values()).filter(t => t.status === 'AVAILABLE');
     const selectedTruckData = selectedTruckId ? availableTrucks.find(t => t.id === selectedTruckId) : null;
@@ -50,7 +50,7 @@ export default function OrderBuilder() {
 
             const fetchPreviews = async () => {
                 try {
-                    const r1 = await fetch(`http://router.project-osrm.org/route/v1/driving/${truck.currentLng},${truck.currentLat};${startLoc!.longitude},${startLoc!.latitude}?overview=full&geometries=polyline`, { signal: abortController.signal });
+                    const r1 = await fetch(`https://router.project-osrm.org/route/v1/driving/${truck.currentLng},${truck.currentLat};${startLoc!.longitude},${startLoc!.latitude}?overview=full&geometries=polyline`, { signal: abortController.signal });
                     const d1 = await r1.json();
                     if (d1.routes?.[0]) {
                         setPreviewPoly1Str(d1.routes[0].geometry);
@@ -58,7 +58,7 @@ export default function OrderBuilder() {
                         setPreviewRoute1(decodePolyline(d1.routes[0].geometry));
                     }
 
-                    const r2 = await fetch(`http://router.project-osrm.org/route/v1/driving/${startLoc!.longitude},${startLoc!.latitude};${endLoc!.longitude},${endLoc!.latitude}?overview=full&geometries=polyline`, { signal: abortController.signal });
+                    const r2 = await fetch(`https://router.project-osrm.org/route/v1/driving/${startLoc!.longitude},${startLoc!.latitude};${endLoc!.longitude},${endLoc!.latitude}?overview=full&geometries=polyline`, { signal: abortController.signal });
                     const d2 = await r2.json();
                     if (d2.routes?.[0]) {
                         setPreviewPoly2Str(d2.routes[0].geometry);

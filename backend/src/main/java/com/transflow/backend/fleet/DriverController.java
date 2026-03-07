@@ -70,8 +70,11 @@ public class DriverController {
     @DeleteMapping("/{id}")
     public ResponseEntity<?> deleteDriver(@PathVariable Long id) {
         return driverRepository.findById(id).map(driver -> {
-            if ("BUSY".equals(driver.getStatus())) {
-                throw new IllegalArgumentException("Nie można usunąć kierowcy w trasie.");
+            boolean hasActiveOrders = orderRepository.findByDriverId(id).stream()
+                    .anyMatch(o -> List.of("APPROACHING", "LOADING", "IN_TRANSIT", "RESCUE_APPROACHING", "HANDOVER", "TOW_APPROACHING", "WAITING_FOR_CARGO_CLEARANCE", "TOWING").contains(o.getStatus()));
+
+            if (hasActiveOrders || "BUSY".equals(driver.getStatus())) {
+                throw new IllegalArgumentException("Nie można usunąć kierowcy przypisanego do aktywnego zlecenia.");
             }
 
             driver.setAssignedVehicle(null);

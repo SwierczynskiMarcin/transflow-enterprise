@@ -16,7 +16,7 @@ export default function InfoHUD() {
     const { trucks, locations } = useSimulation();
     const { showToast } = useToast();
 
-    const [isSimulatingBreakdown, setIsSimulatingBreakdown] = useState(false);
+    const[isSimulatingBreakdown, setIsSimulatingBreakdown] = useState(false);
 
     let targetType: 'none' | 'vehicle' | 'location' = 'none';
     let vehicleData: VehicleData | null = null;
@@ -53,20 +53,11 @@ export default function InfoHUD() {
         try {
             await triggerBreakdown(targetId);
             showToast('Awaria zgłoszona! System autonomiczny przejmuje inicjatywę...', 'error');
-
-            setTimeout(async () => {
-                try {
-                    await autoAssignRescue(targetId);
-                    showToast('Sukces. Ratownik Cargo oraz jednostka MSU zostały zadysponowane!', 'success');
-                } catch (error: any) {
-                    showToast(error.message, 'error');
-                } finally {
-                    setIsSimulatingBreakdown(false);
-                }
-            }, 1500);
-
+            await autoAssignRescue(targetId);
+            showToast('Sukces. Ratownik Cargo oraz jednostka MSU zostały zadysponowane!', 'success');
         } catch (error: any) {
             showToast(error.message, 'error');
+        } finally {
             setIsSimulatingBreakdown(false);
         }
     };

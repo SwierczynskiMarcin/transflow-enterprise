@@ -26,7 +26,6 @@ export default function SettingsManager() {
         }
     }, [maxDispatch, dispatchStatus]);
 
-    // Background job progress tracking based on WebSocket reactive updates
     useEffect(() => {
         if (loadingAction === 'dispatch' && dispatchStatus) {
             const dispatched = dispatchStatus.initialMax - maxDispatch;
@@ -51,8 +50,6 @@ export default function SettingsManager() {
             try {
                 await actionFn();
                 showToast("Zadanie dyspozytora uruchomione w tle. Proszę czekać...", 'info');
-                // Celowo nie czyścimy stanu ładowania tutaj.
-                // Reaktywny useEffect wyżej "wyłapie" koniec działania po zmianach z WebSockets.
             } catch (error: any) {
                 showToast(error.message, 'error');
                 setLoadingAction(null);

@@ -14,7 +14,7 @@ public class RoutingService {
 
     public RouteInfo getRoute(double startLat, double startLng, double endLat, double endLng) {
         String url = String.format(Locale.US,
-                "http://router.project-osrm.org/route/v1/driving/%f,%f;%f,%f?overview=full&geometries=polyline",
+                "https://router.project-osrm.org/route/v1/driving/%f,%f;%f,%f?overview=full&geometries=polyline",
                 startLng, startLat, endLng, endLat);
 
         try {

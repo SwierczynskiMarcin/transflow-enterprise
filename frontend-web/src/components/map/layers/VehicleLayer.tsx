@@ -102,12 +102,16 @@ export default function VehicleLayer() {
         Array.from(trucks.values()).forEach(truck => {
             let isParked = false;
             for (const loc of locations) {
-                if (calculateDistance(truck.currentLat, truck.currentLng, loc.latitude, loc.longitude) <= 0.5) {
-                    isParked = true;
-                    break;
+                if (Math.abs(truck.currentLat - loc.latitude) < 0.01 && Math.abs(truck.currentLng - loc.longitude) < 0.01) {
+                    if (calculateDistance(truck.currentLat, truck.currentLng, loc.latitude, loc.longitude) <= 0.5) {
+                        isParked = true;
+                        break;
+                    }
                 }
             }
-            if (!isParked || truck.status === 'WAITING_FOR_TOW' || truck.status === 'BEING_TOWED') { onRoad.push(truck); }
+            if (!isParked || truck.status === 'WAITING_FOR_TOW' || truck.status === 'BEING_TOWED') {
+                onRoad.push(truck);
+            }
         });
         return onRoad;
     }, [trucks, locations]);
