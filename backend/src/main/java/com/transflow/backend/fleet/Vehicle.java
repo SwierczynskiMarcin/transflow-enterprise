@@ -10,6 +10,10 @@ public class Vehicle {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
+    @Version
+    private Long version = 0L;
+
     private String plateNumber;
     private String brand;
     private String model;

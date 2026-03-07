@@ -24,7 +24,20 @@ export default function SettingsManager() {
                 setDispatchCount(0);
             }
         }
-    },[maxDispatch, dispatchStatus]);
+    }, [maxDispatch, dispatchStatus]);
+
+    // Background job progress tracking based on WebSocket reactive updates
+    useEffect(() => {
+        if (loadingAction === 'dispatch' && dispatchStatus) {
+            const dispatched = dispatchStatus.initialMax - maxDispatch;
+            if (dispatched >= dispatchStatus.requested || maxDispatch === 0) {
+                setLoadingAction(null);
+                setDispatchStatus(null);
+                showToast(`Zakończono pracę dyspozytora. Wysłano ${dispatched} pojazdów w trasy.`, 'success');
+                Promise.all([refreshVehicles(), refreshRoutes(), refreshOrders()]).catch(() => {});
+            }
+        }
+    },[maxDispatch, loadingAction, dispatchStatus, showToast, refreshVehicles, refreshRoutes, refreshOrders]);
 
     const handleAction = async (actionId: string, actionFn: () => Promise<any>, successText: string) => {
         if (actionId === 'clear' && !confirm("UWAGA! Ta operacja wywoła polecenie SQL TRUNCATE CASCADE. Bezpowrotnie usunie wszystkie dane, pojazdy, zlecenia i bazy z systemu oraz wyzeruje identyfikatory (ID). Kontynuować?")) {
@@ -35,6 +48,17 @@ export default function SettingsManager() {
 
         if (actionId === 'dispatch') {
             setDispatchStatus({ active: true, requested: dispatchCount, initialMax: maxDispatch });
+            try {
+                await actionFn();
+                showToast("Zadanie dyspozytora uruchomione w tle. Proszę czekać...", 'info');
+                // Celowo nie czyścimy stanu ładowania tutaj.
+                // Reaktywny useEffect wyżej "wyłapie" koniec działania po zmianach z WebSockets.
+            } catch (error: any) {
+                showToast(error.message, 'error');
+                setLoadingAction(null);
+                setDispatchStatus(null);
+            }
+            return;
         }
 
         try {
@@ -54,7 +78,6 @@ export default function SettingsManager() {
             showToast(error.message, 'error');
         } finally {
             setLoadingAction(null);
-            if (actionId === 'dispatch') setDispatchStatus(null);
         }
     };
 
@@ -135,7 +158,7 @@ export default function SettingsManager() {
                         {loadingAction === 'dispatch' && dispatchStatus ? (
                             <div className="w-full flex flex-col gap-2">
                                 <div className="flex justify-between text-xs font-bold uppercase tracking-wider text-slate-400">
-                                    <span className="flex items-center gap-2"><Loader2 className="animate-spin text-amber-400" size={14}/> Trwa dysponowanie floty...</span>
+                                    <span className="flex items-center gap-2"><Loader2 className="animate-spin text-amber-400" size={14}/> Trwa zadanie w tle (Background Job)...</span>
                                     <span className="text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded">{dispatchedCount} / {dispatchStatus.requested}</span>
                                 </div>
                                 <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden shadow-inner">
@@ -169,7 +192,7 @@ export default function SettingsManager() {
                         disabled={maxDispatch === 0 || loadingAction !== null}
                         className="w-full bg-amber-600 hover:bg-amber-500 text-white font-bold py-3 rounded-xl transition flex items-center justify-center gap-2 relative z-10 disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_0_15px_rgba(245,158,11,0.2)]"
                     >
-                        {loadingAction === 'dispatch' ? <><Loader2 className="animate-spin" size={20} /> Negocjowanie tras z serwerem OSRM...</> : 'Uruchom Masowy Dispatch'}
+                        {loadingAction === 'dispatch' ? <><Loader2 className="animate-spin" size={20} /> Przetwarzanie asynchroniczne...</> : 'Uruchom Masowy Dispatch'}
                     </button>
                 </div>
 

@@ -5,18 +5,19 @@ import { getDrivers, addDriver, updateDriver, deleteDriver, getVehicles } from '
 import { useToast } from '../../context/ToastContext';
 import { calculateDistance } from '../../utils/mapUtils';
 
-interface DriverDB { id: number; firstName: string; lastName: string; phoneNumber: string; status: string; assignedVehicle?: { id: number; plateNumber: string; brand: string; }; }
+interface DriverDB { id: number; version?: number; firstName: string; lastName: string; phoneNumber: string; status: string; assignedVehicle?: { id: number; plateNumber: string; brand: string; }; }
 interface VehicleDB { id: number; plateNumber: string; brand: string; }
 
 export default function DriverManager() {
     const { refreshVehicles, trucks, locations, orders } = useSimulation();
     const { showToast } = useToast();
-    const [drivers, setDrivers] = useState<DriverDB[]>([]);
+    const[drivers, setDrivers] = useState<DriverDB[]>([]);
     const [vehicles, setVehicles] = useState<VehicleDB[]>([]);
     const[isFormOpen, setIsFormOpen] = useState(false);
     const [editingId, setEditingId] = useState<number | null>(null);
     const containerRef = useRef<HTMLDivElement>(null);
 
+    const [version, setVersion] = useState<number>(0);
     const[firstName, setFirstName] = useState('');
     const [lastName, setLastName] = useState('');
     const[phone, setPhone] = useState('');
@@ -60,11 +61,12 @@ export default function DriverManager() {
     },[drivers, trucks]);
 
     const resetForm = () => {
-        setFirstName(''); setLastName(''); setPhone(''); setSelectedVehicleId('');
+        setVersion(0); setFirstName(''); setLastName(''); setPhone(''); setSelectedVehicleId('');
         setEditingId(null); setIsFormOpen(false);
     };
 
     const handleEditClick = (d: DriverDB) => {
+        setVersion(d.version || 0);
         setFirstName(d.firstName); setLastName(d.lastName); setPhone(d.phoneNumber);
         setSelectedVehicleId(d.assignedVehicle ? d.assignedVehicle.id.toString() : '');
         setEditingId(d.id); setIsFormOpen(true);
@@ -85,7 +87,7 @@ export default function DriverManager() {
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        const payload = { firstName, lastName, phoneNumber: phone, assignedVehicle: selectedVehicleId ? { id: parseInt(selectedVehicleId) } : null };
+        const payload = { version, firstName, lastName, phoneNumber: phone, assignedVehicle: selectedVehicleId ? { id: parseInt(selectedVehicleId) } : null };
 
         try {
             if (editingId) {

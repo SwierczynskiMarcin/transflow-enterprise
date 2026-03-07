@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, type ReactNode, type FC } from 'react';
+import { createContext, useContext, useState, useCallback, type ReactNode, type FC } from 'react';
 import { X, CheckCircle, AlertTriangle, Info } from 'lucide-react';
 
 export type ToastType = 'success' | 'error' | 'info';
@@ -18,17 +18,17 @@ const ToastContext = createContext<ToastContextProps | undefined>(undefined);
 export const ToastProvider: FC<{ children: ReactNode }> = ({ children }) => {
     const[toasts, setToasts] = useState<Toast[]>([]);
 
-    const showToast = (message: string, type: ToastType = 'info') => {
+    const showToast = useCallback((message: string, type: ToastType = 'info') => {
         const id = Math.random().toString(36).substring(2, 9);
-        setToasts((prev) =>[...prev, { id, message, type }]);
+        setToasts((prev) => [...prev, { id, message, type }]);
         setTimeout(() => {
             setToasts((prev) => prev.filter((t) => t.id !== id));
         }, 5000);
-    };
+    },[]);
 
-    const removeToast = (id: string) => {
+    const removeToast = useCallback((id: string) => {
         setToasts((prev) => prev.filter((t) => t.id !== id));
-    };
+    },[]);
 
     return (
         <ToastContext.Provider value={{ showToast }}>

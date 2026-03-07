@@ -9,4 +9,5 @@ import java.util.List;
 public interface OrderRepository extends JpaRepository<Order, Long> {
     List<Order> findByVehicleId(Long vehicleId);
     List<Order> findByDriverId(Long driverId);
+    List<Order> findByStatusIn(List<String> statuses);
 }

@@ -5,6 +5,7 @@ import com.transflow.backend.logistics.OrderRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -47,6 +48,9 @@ public class VehicleController {
         return vehicleRepository.findById(id).map(vehicle -> {
             if ("BUSY".equals(vehicle.getStatus())) {
                 throw new IllegalArgumentException("Edycja zablokowana - pojazd w trasie.");
+            }
+            if (dto.version() != null && !vehicle.getVersion().equals(dto.version())) {
+                throw new ObjectOptimisticLockingFailureException(Vehicle.class, vehicle.getId());
             }
             vehicle.setPlateNumber(dto.plateNumber());
             vehicle.setBrand(dto.brand());

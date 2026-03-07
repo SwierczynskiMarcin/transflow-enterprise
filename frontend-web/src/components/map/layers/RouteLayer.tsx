@@ -13,15 +13,15 @@ export default function RouteLayer() {
 
     const poly1 = useMemo(() => {
         return activeRoute?.routePolylineApproaching ? decodePolyline(activeRoute.routePolylineApproaching) : [];
-    }, [activeRoute?.routePolylineApproaching]);
+    },[activeRoute?.routePolylineApproaching]);
 
     const poly2 = useMemo(() => {
         return activeRoute?.routePolylineTransit ? decodePolyline(activeRoute.routePolylineTransit) : [];
-    }, [activeRoute?.routePolylineTransit]);
+    },[activeRoute?.routePolylineTransit]);
 
     return (
         <>
-            {activeRoute && activeTruck && (
+            {activeRoute && activeTruck && activeTruck.status === 'BUSY' && (
                 <Fragment>
                     {poly2.length > 0 && (
                         <Polyline positions={poly2} color="#3b82f6" weight={6} opacity={1} />
