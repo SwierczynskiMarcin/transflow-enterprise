@@ -14,10 +14,13 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
@@ -41,6 +44,7 @@ public class SimulationEngine {
     private double timeMultiplier = 60.0;
 
     @Scheduled(fixedRate = 2000)
+    @Transactional
     public void simulateMovement() {
         messagingTemplate.convertAndSend("/topic/simulation",
                 new SimulationStateDTO(isRunning, timeMultiplier, virtualClock.getCurrentTime()));
@@ -50,10 +54,13 @@ public class SimulationEngine {
         virtualClock.advanceTime(TICK_RATE_SECONDS, timeMultiplier);
 
         List<Order> activeOrders = orderRepository.findByStatusIn(List.of("APPROACHING", "LOADING", "IN_TRANSIT", "RESCUE_APPROACHING", "HANDOVER", "TOW_APPROACHING", "WAITING_FOR_CARGO_CLEARANCE", "TOWING"));
-        List<VehicleSimulationDTO> tickUpdates = new ArrayList<>();
 
-        for (Order order : activeOrders) {
-            try {
+        List<VehicleSimulationDTO> tickUpdates = new ArrayList<>();
+        List<Order> ordersToSave = new ArrayList<>();
+        Set<Vehicle> vehiclesToSave = new HashSet<>();
+
+        try {
+            for (Order order : activeOrders) {
                 Vehicle vehicle = order.getVehicle();
 
                 if ("BROKEN".equals(vehicle.getStatus()) || "WAITING_FOR_TOW".equals(vehicle.getStatus()) || "BEING_TOWED".equals(vehicle.getStatus())) {
@@ -170,8 +177,8 @@ public class SimulationEngine {
                                     vehicle.setStatus("BUSY");
                                     vehicle.setTargetRescueId(null);
 
-                                    orderRepository.save(brokenCargoOrder);
-                                    vehicleRepository.save(brokenVehicle);
+                                    ordersToSave.add(brokenCargoOrder);
+                                    vehiclesToSave.add(brokenVehicle);
                                 } else if (brokenCargoOrder != null) {
                                     Order technicalOrder = new Order();
                                     technicalOrder.setVehicle(vehicle);
@@ -191,7 +198,7 @@ public class SimulationEngine {
                                     technicalOrder.setGpsDistance(0.0);
 
                                     vehicle.setStatus("RESCUE_MISSION");
-                                    orderRepository.save(technicalOrder);
+                                    ordersToSave.add(technicalOrder);
                                 } else {
                                     vehicle.setStatus("AVAILABLE");
                                     vehicle.setTargetRescueId(null);
@@ -242,8 +249,8 @@ public class SimulationEngine {
                                 vehicle.setStatus("HANDOVER");
                                 brokenVehicle.setStatus("WAITING_FOR_TOW");
 
-                                orderRepository.save(brokenCargoOrder);
-                                vehicleRepository.save(brokenVehicle);
+                                ordersToSave.add(brokenCargoOrder);
+                                vehiclesToSave.add(brokenVehicle);
                             } else {
                                 vehicle.setStatus("AVAILABLE");
                                 vehicle.setTargetRescueId(null);
@@ -274,11 +281,18 @@ public class SimulationEngine {
 
                     if (order.getProgress() >= 1.0) {
                         Vehicle target = vehicleRepository.findById(vehicle.getTargetTowId()).orElse(null);
-                        if (target != null && "WAITING_FOR_TOW".equals(target.getStatus())) {
-                            startTowing(vehicle, target, order);
-                        } else if (target != null) {
-                            order.setStatus("WAITING_FOR_CARGO_CLEARANCE");
-                            vehicle.setStatus("WAITING_FOR_CARGO_CLEARANCE");
+                        if (target != null) {
+                            boolean hasRescuer = vehicleRepository.findAll().stream()
+                                    .anyMatch(v -> target.getId().equals(v.getTargetRescueId()));
+                            boolean hasCargoOrder = orderRepository.findByStatusIn(List.of("APPROACHING", "LOADING", "IN_TRANSIT", "HANDOVER"))
+                                    .stream().anyMatch(o -> o.getVehicle() != null && o.getVehicle().getId().equals(target.getId()));
+
+                            if (!hasRescuer && !hasCargoOrder) {
+                                startTowing(vehicle, target, order);
+                            } else {
+                                order.setStatus("WAITING_FOR_CARGO_CLEARANCE");
+                                vehicle.setStatus("WAITING_FOR_CARGO_CLEARANCE");
+                            }
                         } else {
                             order.setStatus("COMPLETED");
                             vehicle.setStatus("AVAILABLE");
@@ -289,11 +303,18 @@ public class SimulationEngine {
                     }
                 } else if ("WAITING_FOR_CARGO_CLEARANCE".equals(order.getStatus())) {
                     Vehicle target = vehicleRepository.findById(vehicle.getTargetTowId()).orElse(null);
-                    if (target != null && "WAITING_FOR_TOW".equals(target.getStatus())) {
-                        startTowing(vehicle, target, order);
-                        messagingTemplate.convertAndSend("/topic/updates", "ORDERS");
-                        messagingTemplate.convertAndSend("/topic/updates", "VEHICLES");
-                    } else if (target == null) {
+                    if (target != null) {
+                        boolean hasRescuer = vehicleRepository.findAll().stream()
+                                .anyMatch(v -> target.getId().equals(v.getTargetRescueId()));
+                        boolean hasCargoOrder = orderRepository.findByStatusIn(List.of("APPROACHING", "LOADING", "IN_TRANSIT", "HANDOVER"))
+                                .stream().anyMatch(o -> o.getVehicle() != null && o.getVehicle().getId().equals(target.getId()));
+
+                        if (!hasRescuer && !hasCargoOrder) {
+                            startTowing(vehicle, target, order);
+                            messagingTemplate.convertAndSend("/topic/updates", "ORDERS");
+                            messagingTemplate.convertAndSend("/topic/updates", "VEHICLES");
+                        }
+                    } else {
                         order.setStatus("COMPLETED");
                         vehicle.setStatus("AVAILABLE");
                         vehicle.setTargetTowId(null);
@@ -316,7 +337,7 @@ public class SimulationEngine {
                     if (target != null) {
                         target.setCurrentLat(vehicle.getCurrentLat());
                         target.setCurrentLng(vehicle.getCurrentLng());
-                        vehicleRepository.save(target);
+                        vehiclesToSave.add(target);
 
                         tickUpdates.add(new VehicleSimulationDTO(
                                 target.getId(), target.getPlateNumber(), target.getBrand(), target.getModel(),
@@ -340,22 +361,29 @@ public class SimulationEngine {
                     }
                 }
 
-                vehicleRepository.save(vehicle);
-                orderRepository.save(order);
+                vehiclesToSave.add(vehicle);
+                ordersToSave.add(order);
 
                 tickUpdates.add(new VehicleSimulationDTO(
                         vehicle.getId(), vehicle.getPlateNumber(), vehicle.getBrand(), vehicle.getModel(),
                         vehicle.getCurrentLat(), vehicle.getCurrentLng(), vehicle.getStatus(), order.getStatus(),
                         order.getProgress(), order.getGpsDistance()
                 ));
-
-            } catch (ObjectOptimisticLockingFailureException e) {
-                System.err.println("[SimulationEngine] Tick pominiety dla pojazdu ID: " + order.getVehicle().getId() + " - wykryto modyfikacje zewnetrzna.");
             }
-        }
 
-        if (!tickUpdates.isEmpty()) {
-            messagingTemplate.convertAndSend("/topic/trucks", tickUpdates);
+            if (!vehiclesToSave.isEmpty()) {
+                vehicleRepository.saveAll(vehiclesToSave);
+            }
+            if (!ordersToSave.isEmpty()) {
+                orderRepository.saveAll(ordersToSave);
+            }
+
+            if (!tickUpdates.isEmpty()) {
+                messagingTemplate.convertAndSend("/topic/trucks", tickUpdates);
+            }
+
+        } catch (ObjectOptimisticLockingFailureException e) {
+            System.err.println("[SimulationEngine] Tick pominięty: Wykryto współbieżną modyfikację danych (Optimistic Lock).");
         }
     }
 

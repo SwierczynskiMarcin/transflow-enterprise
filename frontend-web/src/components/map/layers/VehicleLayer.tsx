@@ -7,7 +7,7 @@ import { useSimulation, type VehicleData } from '../../../context/SimulationCont
 import { useMapContext } from '../MapContext';
 import { calculateDistance } from '../../../utils/mapUtils';
 
-const createTruckIcon = (colorClass: string, glowColor: string, isSelected: boolean, isBroken: boolean, isWaitingForTow: boolean, isServiceUnit: boolean, isBeingTowed: boolean) => {
+const createTruckIcon = (colorClass: string, glowColor: string, isSelected: boolean, isBroken: boolean, isWaitingForTow: boolean, isServiceUnit: boolean, isBeingTowed: boolean, offsetX: number, offsetY: number) => {
     const dynamicGlow = isSelected ? glowColor.replace('0.5)', '0.9)').replace('0.8)', '1)') : glowColor;
     const scaleClass = isSelected ? 'scale-125' : 'hover:scale-110';
     const brokenClass = isBroken ? 'animate-pulse' : '';
@@ -25,17 +25,24 @@ const createTruckIcon = (colorClass: string, glowColor: string, isSelected: bool
             <IconComponent size={20} className={colorClass.replace('border-', 'text-')} />
         </div>
     );
-    return L.divIcon({ className: 'bg-transparent border-none', html: htmlString, iconSize:[40, 40], iconAnchor: [20, 20] });
+    return L.divIcon({
+        className: 'bg-transparent border-none',
+        html: htmlString,
+        iconSize: [40, 40],
+        iconAnchor:[20 - offsetX, 20 - offsetY]
+    });
 };
 
 const MemoizedTruckMarker = memo(({
-                                      truck, onSelect, onHover, onHoverOut, isSelected
+                                      truck, onSelect, onHover, onHoverOut, isSelected, offsetX, offsetY
                                   }: {
     truck: VehicleData,
     onSelect: (id: number) => void,
     onHover: (id: number) => void,
     onHoverOut: () => void,
-    isSelected: boolean
+    isSelected: boolean,
+    offsetX: number,
+    offsetY: number
 }) => {
     let colorClass = truck.isServiceUnit ? 'border-orange-400' : 'border-emerald-400';
     let glowColor = truck.isServiceUnit ? 'rgba(251,146,60,0.5)' : 'rgba(52,211,153,0.5)';
@@ -50,7 +57,10 @@ const MemoizedTruckMarker = memo(({
     } else if (isWaitingForTow || isBeingTowed) {
         colorClass = 'border-slate-500 border-dashed';
         glowColor = 'rgba(100,116,139,0.5)';
-    } else if (truck.status === 'HANDOVER' || truck.status === 'WAITING_FOR_CARGO_CLEARANCE') {
+    } else if (truck.status === 'WAITING_FOR_CARGO_CLEARANCE') {
+        colorClass = 'border-sky-400';
+        glowColor = 'rgba(56,189,248,0.8)';
+    } else if (truck.status === 'HANDOVER') {
         colorClass = 'border-fuchsia-400';
         glowColor = 'rgba(232,121,249,0.8)';
     } else if (truck.status === 'RESCUE_MISSION' || truck.orderStatus === 'RESCUE_APPROACHING' || truck.status === 'TOW_APPROACHING' || truck.status === 'TOWING') {
@@ -66,7 +76,7 @@ const MemoizedTruckMarker = memo(({
         }
     }
 
-    const icon = useMemo(() => createTruckIcon(colorClass, glowColor, isSelected, isBroken, isWaitingForTow, truck.isServiceUnit, isBeingTowed),[colorClass, glowColor, isSelected, isBroken, isWaitingForTow, truck.isServiceUnit, isBeingTowed]);
+    const icon = useMemo(() => createTruckIcon(colorClass, glowColor, isSelected, isBroken, isWaitingForTow, truck.isServiceUnit, isBeingTowed, offsetX, offsetY),[colorClass, glowColor, isSelected, isBroken, isWaitingForTow, truck.isServiceUnit, isBeingTowed, offsetX, offsetY]);
 
     return (
         <Marker
@@ -86,7 +96,9 @@ const MemoizedTruckMarker = memo(({
         prev.truck.status === next.truck.status &&
         prev.truck.orderStatus === next.truck.orderStatus &&
         prev.truck.progress === next.truck.progress &&
-        prev.isSelected === next.isSelected;
+        prev.isSelected === next.isSelected &&
+        prev.offsetX === next.offsetX &&
+        prev.offsetY === next.offsetY;
 });
 
 export default function VehicleLayer() {
@@ -102,11 +114,9 @@ export default function VehicleLayer() {
         Array.from(trucks.values()).forEach(truck => {
             let isParked = false;
             for (const loc of locations) {
-                if (Math.abs(truck.currentLat - loc.latitude) < 0.01 && Math.abs(truck.currentLng - loc.longitude) < 0.01) {
-                    if (calculateDistance(truck.currentLat, truck.currentLng, loc.latitude, loc.longitude) <= 0.5) {
-                        isParked = true;
-                        break;
-                    }
+                if (calculateDistance(truck.currentLat, truck.currentLng, loc.latitude, loc.longitude) <= 0.5) {
+                    isParked = true;
+                    break;
                 }
             }
             if (!isParked || truck.status === 'WAITING_FOR_TOW' || truck.status === 'BEING_TOWED') {
@@ -116,18 +126,57 @@ export default function VehicleLayer() {
         return onRoad;
     }, [trucks, locations]);
 
+    const offsets = useMemo(() => {
+        const grouped = new Map<string, VehicleData[]>();
+        trucksOnRoad.forEach(t => {
+            const key = `${t.currentLat.toFixed(4)},${t.currentLng.toFixed(4)}`;
+            if (!grouped.has(key)) grouped.set(key,[]);
+            grouped.get(key)!.push(t);
+        });
+
+        const truckOffsets = new Map<number, { x: number, y: number }>();
+        grouped.forEach(group => {
+            if (group.length > 1) {
+                group.forEach((t, index) => {
+                    let isParked = false;
+                    for (const loc of locations) {
+                        if (calculateDistance(t.currentLat, t.currentLng, loc.latitude, loc.longitude) <= 0.5) {
+                            isParked = true;
+                            break;
+                        }
+                    }
+                    if (!isParked) {
+                        const angle = (Math.PI * 2 * index) / group.length;
+                        const radius = 16;
+                        truckOffsets.set(t.id, { x: Math.cos(angle) * radius, y: Math.sin(angle) * radius });
+                    } else {
+                        truckOffsets.set(t.id, { x: 0, y: 0 });
+                    }
+                });
+            } else {
+                truckOffsets.set(group[0].id, { x: 0, y: 0 });
+            }
+        });
+        return truckOffsets;
+    },[trucksOnRoad, locations]);
+
     return (
         <>
-            {trucksOnRoad.map(truck => (
-                <MemoizedTruckMarker
-                    key={`truck-${truck.id}`}
-                    truck={truck}
-                    isSelected={selectedRouteVehicleId === truck.id}
-                    onSelect={setSelectedRouteVehicleId}
-                    onHover={setHoveredVehicleId}
-                    onHoverOut={() => setHoveredVehicleId(null)}
-                />
-            ))}
+            {trucksOnRoad.map(truck => {
+                const offset = offsets.get(truck.id) || { x: 0, y: 0 };
+                return (
+                    <MemoizedTruckMarker
+                        key={`truck-${truck.id}`}
+                        truck={truck}
+                        isSelected={selectedRouteVehicleId === truck.id}
+                        onSelect={setSelectedRouteVehicleId}
+                        onHover={setHoveredVehicleId}
+                        onHoverOut={() => setHoveredVehicleId(null)}
+                        offsetX={offset.x}
+                        offsetY={offset.y}
+                    />
+                );
+            })}
         </>
     );
 }

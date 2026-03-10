@@ -128,7 +128,15 @@ export default function VehicleManager() {
             );
         }
 
-        if (liveTruck.status === 'HANDOVER' || liveTruck.status === 'WAITING_FOR_CARGO_CLEARANCE') {
+        if (liveTruck.status === 'WAITING_FOR_CARGO_CLEARANCE') {
+            return (
+                <span className="flex items-center gap-1 text-sky-400 font-bold animate-pulse">
+                    <Wrench size={14} /> PRZYGOTOWANIE DO HOLOWANIA
+                </span>
+            );
+        }
+
+        if (liveTruck.status === 'HANDOVER') {
             return (
                 <span className="flex items-center gap-1 text-fuchsia-400 font-bold animate-pulse">
                     POSTÓJ OPERACYJNY NA TRASIE

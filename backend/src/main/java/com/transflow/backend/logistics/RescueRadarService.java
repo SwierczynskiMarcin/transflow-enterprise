@@ -27,8 +27,6 @@ public class RescueRadarService {
 
     private static final double TRUCK_SPEED_KMH = 80.0;
 
-    private record CandidateTemp(Vehicle v, double straightDist, String statusMsg, double startLat, double startLng) {}
-
     public List<RescueCandidateDTO> scanForCandidates(Long targetVehicleId) {
         Vehicle targetVehicle = vehicleRepository.findById(targetVehicleId)
                 .orElseThrow(() -> new IllegalArgumentException("Nie znaleziono pojazdu"));
@@ -48,7 +46,7 @@ public class RescueRadarService {
         List<Vehicle> allVehicles = vehicleRepository.findAll();
         List<Order> activeOrders = orderRepository.findByStatusIn(List.of("IN_TRANSIT", "APPROACHING", "LOADING"));
 
-        List<CandidateTemp> temps = new ArrayList<>();
+        List<RescueCandidateDTO> candidates = new ArrayList<>();
 
         for (Vehicle v : allVehicles) {
             if (Boolean.TRUE.equals(v.getIsServiceUnit())) continue;
@@ -56,8 +54,9 @@ public class RescueRadarService {
             if (v.getTargetRescueId() != null) continue;
 
             if ("AVAILABLE".equals(v.getStatus())) {
-                double straightDist = physicsService.calculateDistance(v.getCurrentLat(), v.getCurrentLng(), targetLat, targetLng);
-                temps.add(new CandidateTemp(v, straightDist, "Wolny", v.getCurrentLat(), v.getCurrentLng()));
+                double distanceKm = physicsService.calculateDistance(v.getCurrentLat(), v.getCurrentLng(), targetLat, targetLng);
+                double etaMinutes = (distanceKm / TRUCK_SPEED_KMH) * 60;
+                candidates.add(new RescueCandidateDTO(v.getId(), v.getPlateNumber(), v.getBrand(), "A", distanceKm, etaMinutes, "Wolny"));
             } else if ("BUSY".equals(v.getStatus())) {
                 Order order = activeOrders.stream()
                         .filter(o -> o.getVehicle() != null && o.getVehicle().getId().equals(v.getId()))
@@ -65,57 +64,28 @@ public class RescueRadarService {
                         .orElse(null);
 
                 if (order != null && "IN_TRANSIT".equals(order.getStatus()) && order.getProgress() != null && order.getProgress() > 0.6) {
-                    double straightDist = physicsService.calculateDistance(
-                            order.getEndLocation().getLatitude(), order.getEndLocation().getLongitude(),
-                            targetLat, targetLng
-                    );
-                    temps.add(new CandidateTemp(v, straightDist, "W Trasie (" + Math.round(order.getProgress() * 100) + "%)", order.getEndLocation().getLatitude(), order.getEndLocation().getLongitude()));
-                }
-            }
-        }
-
-        temps.sort(Comparator.comparingDouble(CandidateTemp::straightDist));
-
-        List<RescueCandidateDTO> candidates = new ArrayList<>();
-        int limit = Math.min(5, temps.size());
-
-        for (int i = 0; i < limit; i++) {
-            CandidateTemp ct = temps.get(i);
-            RoutingService.RouteInfo route = routingService.getRoute(ct.startLat(), ct.startLng(), targetLat, targetLng);
-
-            double actualDistKm;
-            if (route != null && route.distance() != null) {
-                actualDistKm = route.distance() / 1000.0;
-            } else {
-                actualDistKm = ct.straightDist();
-            }
-
-            double etaMinutes;
-            if ("AVAILABLE".equals(ct.v().getStatus())) {
-                etaMinutes = (actualDistKm / TRUCK_SPEED_KMH) * 60;
-            } else {
-                Order order = activeOrders.stream()
-                        .filter(o -> o.getVehicle() != null && o.getVehicle().getId().equals(ct.v().getId()))
-                        .findFirst()
-                        .orElse(null);
-
-                double remainingTripDistKm = 0.0;
-                if (order != null) {
+                    double remainingTripDistKm = 0.0;
                     if (order.getRouteDistanceTransit() != null) {
                         remainingTripDistKm = ((1.0 - order.getProgress()) * order.getRouteDistanceTransit()) / 1000.0;
                     } else {
-                        remainingTripDistKm = (1.0 - order.getProgress()) * ct.straightDist();
+                        double totalDist = physicsService.calculateDistance(
+                                order.getStartLocation().getLatitude(), order.getStartLocation().getLongitude(),
+                                order.getEndLocation().getLatitude(), order.getEndLocation().getLongitude()
+                        );
+                        remainingTripDistKm = (1.0 - order.getProgress()) * totalDist;
                     }
-                }
-                actualDistKm += remainingTripDistKm;
-                etaMinutes = (actualDistKm / TRUCK_SPEED_KMH) * 60;
-            }
 
-            candidates.add(new RescueCandidateDTO(
-                    ct.v().getId(), ct.v().getPlateNumber(), ct.v().getBrand(),
-                    "AVAILABLE".equals(ct.v().getStatus()) ? "A" : "B",
-                    actualDistKm, etaMinutes, ct.statusMsg()
-            ));
+                    double distFromEndToBrokenKm = physicsService.calculateDistance(
+                            order.getEndLocation().getLatitude(), order.getEndLocation().getLongitude(),
+                            targetLat, targetLng
+                    );
+
+                    double totalDistKm = remainingTripDistKm + distFromEndToBrokenKm;
+                    double etaMinutes = (totalDistKm / TRUCK_SPEED_KMH) * 60;
+
+                    candidates.add(new RescueCandidateDTO(v.getId(), v.getPlateNumber(), v.getBrand(), "B", totalDistKm, etaMinutes, "W Trasie (" + Math.round(order.getProgress() * 100) + "%)"));
+                }
+            }
         }
 
         candidates.sort(Comparator.comparing(RescueCandidateDTO::etaMinutes));
@@ -167,29 +137,22 @@ public class RescueRadarService {
     }
 
     private void dispatchTowTruck(Vehicle brokenVehicle) {
-        List<Vehicle> msus = vehicleRepository.findAll().stream()
+        boolean alreadyTargeted = vehicleRepository.findAll().stream()
+                .anyMatch(v -> Boolean.TRUE.equals(v.getIsServiceUnit()) &&
+                        brokenVehicle.getId().equals(v.getTargetTowId()));
+        if (alreadyTargeted) return;
+
+        Vehicle msu = vehicleRepository.findAll().stream()
                 .filter(v -> Boolean.TRUE.equals(v.getIsServiceUnit()) && "AVAILABLE".equals(v.getStatus()))
-                .toList();
-
-        Vehicle msu = null;
-        RoutingService.RouteInfo bestRoute = null;
-        double minDistance = Double.MAX_VALUE;
-
-        for (Vehicle v : msus) {
-            RoutingService.RouteInfo route = routingService.getRoute(
-                    v.getCurrentLat(), v.getCurrentLng(),
-                    brokenVehicle.getCurrentLat(), brokenVehicle.getCurrentLng()
-            );
-            double dist = route != null && route.distance() != null ? route.distance() : physicsService.calculateDistance(v.getCurrentLat(), v.getCurrentLng(), brokenVehicle.getCurrentLat(), brokenVehicle.getCurrentLng()) * 1000;
-
-            if (dist < minDistance) {
-                minDistance = dist;
-                msu = v;
-                bestRoute = route;
-            }
-        }
+                .min(Comparator.comparingDouble(v -> physicsService.calculateDistance(v.getCurrentLat(), v.getCurrentLng(), brokenVehicle.getCurrentLat(), brokenVehicle.getCurrentLng())))
+                .orElse(null);
 
         if (msu != null) {
+            RoutingService.RouteInfo route = routingService.getRoute(
+                    msu.getCurrentLat(), msu.getCurrentLng(),
+                    brokenVehicle.getCurrentLat(), brokenVehicle.getCurrentLng()
+            );
+
             Driver driver = driverRepository.findByAssignedVehicleId(msu.getId()).orElse(null);
 
             Order towOrder = new Order();
@@ -198,8 +161,8 @@ public class RescueRadarService {
             towOrder.setStatus("TOW_APPROACHING");
             towOrder.setStartLatApproaching(msu.getCurrentLat());
             towOrder.setStartLngApproaching(msu.getCurrentLng());
-            towOrder.setRoutePolylineApproaching(bestRoute != null ? bestRoute.polyline() : "");
-            towOrder.setRouteDistanceApproaching(bestRoute != null ? bestRoute.distance() : 0.0);
+            towOrder.setRoutePolylineApproaching(route != null ? route.polyline() : "");
+            towOrder.setRouteDistanceApproaching(route != null ? route.distance() : 0.0);
             towOrder.setProgress(0.0);
             towOrder.setGpsDistance(0.0);
 
