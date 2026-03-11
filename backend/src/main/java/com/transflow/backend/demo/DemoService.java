@@ -19,7 +19,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 @Service
 @RequiredArgsConstructor
@@ -32,8 +31,6 @@ public class DemoService {
     private final RoutingService routingService;
     private final OrderService orderService;
     private final SimpMessagingTemplate messagingTemplate;
-
-    private final AtomicBoolean isDispatching = new AtomicBoolean(false);
 
     private static final Object[][] EU_CAPITALS = {
             {"Warszawa", 52.2297, 21.0122, "BASE"}, {"Berlin", 52.5200, 13.4050, "PORT"},
@@ -161,56 +158,62 @@ public class DemoService {
 
     @Async
     public void autoDispatch(int count) {
-        if (!isDispatching.compareAndSet(false, true)) {
-            return;
-        }
+        List<Long> availableVehicleIds = vehicleRepository.findAll().stream()
+                .filter(v -> "AVAILABLE".equals(v.getStatus()) && !Boolean.TRUE.equals(v.getIsServiceUnit()))
+                .filter(v -> driverRepository.findAll().stream().anyMatch(d -> d.getAssignedVehicle() != null && d.getAssignedVehicle().getId().equals(v.getId()) && "AVAILABLE".equals(d.getStatus())))
+                .map(Vehicle::getId)
+                .toList();
 
-        try {
-            List<Vehicle> availableVehicles = vehicleRepository.findAll().stream()
-                    .filter(v -> "AVAILABLE".equals(v.getStatus()) && !Boolean.TRUE.equals(v.getIsServiceUnit()))
-                    .filter(v -> driverRepository.findAll().stream().anyMatch(d -> d.getAssignedVehicle() != null && d.getAssignedVehicle().getId().equals(v.getId()) && "AVAILABLE".equals(d.getStatus())))
-                    .limit(count)
-                    .toList();
+        List<Location> locations = locationRepository.findAll();
+        if (locations.size() < 2 || availableVehicleIds.isEmpty()) return;
 
-            List<Location> locations = locationRepository.findAll();
-            if (locations.size() < 2 || availableVehicles.isEmpty()) return;
+        Random random = new Random();
+        int dispatched = 0;
 
-            Random random = new Random();
+        for (Long vId : availableVehicleIds) {
+            if (dispatched >= count) break;
 
-            for (Vehicle vehicle : availableVehicles) {
-                Location startLoc = locations.get(random.nextInt(locations.size()));
-                Location endLoc = locations.get(random.nextInt(locations.size()));
+            Vehicle vehicle = vehicleRepository.findById(vId).orElse(null);
+            if (vehicle == null || !"AVAILABLE".equals(vehicle.getStatus())) continue;
 
-                while (startLoc.getId().equals(endLoc.getId())) {
-                    endLoc = locations.get(random.nextInt(locations.size()));
-                }
+            Location startLoc = locations.get(random.nextInt(locations.size()));
+            Location endLoc = locations.get(random.nextInt(locations.size()));
 
-                RoutingService.RouteInfo approachRoute = routingService.getRoute(vehicle.getCurrentLat(), vehicle.getCurrentLng(), startLoc.getLatitude(), startLoc.getLongitude());
-                RoutingService.RouteInfo transitRoute = routingService.getRoute(startLoc.getLatitude(), startLoc.getLongitude(), endLoc.getLatitude(), endLoc.getLongitude());
+            while (startLoc.getId().equals(endLoc.getId())) {
+                endLoc = locations.get(random.nextInt(locations.size()));
+            }
 
-                if (approachRoute != null && transitRoute != null) {
-                    OrderCreateRequest req = new OrderCreateRequest(
-                            vehicle.getId(), startLoc.getId(), endLoc.getId(),
-                            approachRoute.polyline(), approachRoute.distance(),
-                            transitRoute.polyline(), transitRoute.distance()
-                    );
+            RoutingService.RouteInfo approachRoute = routingService.getRoute(vehicle.getCurrentLat(), vehicle.getCurrentLng(), startLoc.getLatitude(), startLoc.getLongitude());
 
-                    try {
-                        orderService.createOrder(req);
-                        messagingTemplate.convertAndSend("/topic/updates", "ORDERS");
-                        messagingTemplate.convertAndSend("/topic/updates", "VEHICLES");
-                        messagingTemplate.convertAndSend("/topic/updates", "DRIVERS");
-                    } catch (Exception e) {}
-                }
+            try {
+                Thread.sleep(600);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+
+            RoutingService.RouteInfo transitRoute = routingService.getRoute(startLoc.getLatitude(), startLoc.getLongitude(), endLoc.getLatitude(), endLoc.getLongitude());
+
+            if (approachRoute != null && transitRoute != null) {
+                OrderCreateRequest req = new OrderCreateRequest(
+                        vehicle.getId(), startLoc.getId(), endLoc.getId(),
+                        approachRoute.polyline(), approachRoute.distance(),
+                        transitRoute.polyline(), transitRoute.distance()
+                );
 
                 try {
-                    Thread.sleep(1000);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                }
+                    orderService.createOrder(req);
+                    messagingTemplate.convertAndSend("/topic/updates", "ORDERS");
+                    messagingTemplate.convertAndSend("/topic/updates", "VEHICLES");
+                    messagingTemplate.convertAndSend("/topic/updates", "DRIVERS");
+                    dispatched++;
+                } catch (Exception e) {}
             }
-        } finally {
-            isDispatching.set(false);
+
+            try {
+                Thread.sleep(1200);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
         }
     }
 }
