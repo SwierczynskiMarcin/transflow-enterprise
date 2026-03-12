@@ -60,7 +60,7 @@ public class SimulationEngine {
                     ctx.addTickUpdate(new VehicleSimulationDTO(
                             vehicle.getId(), vehicle.getPlateNumber(), vehicle.getBrand(), vehicle.getModel(),
                             vehicle.getCurrentLat(), vehicle.getCurrentLng(), vehicle.getStatus(), order.getStatus(),
-                            order.getProgress(), order.getGpsDistance()
+                            order.getProgress(), order.getGpsDistance(), vehicle.getNextTowTargetId()
                     ));
                     continue;
                 }
@@ -88,7 +88,7 @@ public class SimulationEngine {
                 ctx.addTickUpdate(new VehicleSimulationDTO(
                         vehicle.getId(), vehicle.getPlateNumber(), vehicle.getBrand(), vehicle.getModel(),
                         vehicle.getCurrentLat(), vehicle.getCurrentLng(), vehicle.getStatus(), order.getStatus(),
-                        order.getProgress(), order.getGpsDistance()
+                        order.getProgress(), order.getGpsDistance(), vehicle.getNextTowTargetId()
                 ));
             }
 

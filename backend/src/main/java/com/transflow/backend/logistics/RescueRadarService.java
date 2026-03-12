@@ -21,6 +21,7 @@ public class RescueRadarService {
     private final VehicleRepository vehicleRepository;
     private final OrderRepository orderRepository;
     private final DriverRepository driverRepository;
+    private final LocationRepository locationRepository;
     private final PhysicsService physicsService;
     private final RoutingService routingService;
     private final SimpMessagingTemplate messagingTemplate;
@@ -139,44 +140,139 @@ public class RescueRadarService {
     private void dispatchTowTruck(Vehicle brokenVehicle) {
         boolean alreadyTargeted = vehicleRepository.findAll().stream()
                 .anyMatch(v -> Boolean.TRUE.equals(v.getIsServiceUnit()) &&
-                        brokenVehicle.getId().equals(v.getTargetTowId()));
+                        (brokenVehicle.getId().equals(v.getTargetTowId()) || brokenVehicle.getId().equals(v.getNextTowTargetId())));
         if (alreadyTargeted) return;
 
-        Vehicle msu = vehicleRepository.findAll().stream()
-                .filter(v -> Boolean.TRUE.equals(v.getIsServiceUnit()) && "AVAILABLE".equals(v.getStatus()))
+        Vehicle availableMsu = vehicleRepository.findAll().stream()
+                .filter(v -> Boolean.TRUE.equals(v.getIsServiceUnit()) && "AVAILABLE".equals(v.getStatus()) && v.getNextTowTargetId() == null)
                 .min(Comparator.comparingDouble(v -> physicsService.calculateDistance(v.getCurrentLat(), v.getCurrentLng(), brokenVehicle.getCurrentLat(), brokenVehicle.getCurrentLng())))
                 .orElse(null);
 
-        if (msu != null) {
+        if (availableMsu != null) {
             RoutingService.RouteInfo route = routingService.getRoute(
-                    msu.getCurrentLat(), msu.getCurrentLng(),
+                    availableMsu.getCurrentLat(), availableMsu.getCurrentLng(),
                     brokenVehicle.getCurrentLat(), brokenVehicle.getCurrentLng()
             );
 
-            Driver driver = driverRepository.findByAssignedVehicleId(msu.getId()).orElse(null);
+            Driver driver = driverRepository.findByAssignedVehicleId(availableMsu.getId()).orElse(null);
 
             Order towOrder = new Order();
-            towOrder.setVehicle(msu);
+            towOrder.setVehicle(availableMsu);
             towOrder.setDriver(driver);
             towOrder.setStatus("TOW_APPROACHING");
-            towOrder.setStartLatApproaching(msu.getCurrentLat());
-            towOrder.setStartLngApproaching(msu.getCurrentLng());
+            towOrder.setStartLatApproaching(availableMsu.getCurrentLat());
+            towOrder.setStartLngApproaching(availableMsu.getCurrentLng());
             towOrder.setRoutePolylineApproaching(route != null ? route.polyline() : "");
             towOrder.setRouteDistanceApproaching(route != null ? route.distance() : 0.0);
             towOrder.setProgress(0.0);
             towOrder.setGpsDistance(0.0);
 
-            msu.setStatus("TOW_APPROACHING");
-            msu.setTargetTowId(brokenVehicle.getId());
+            availableMsu.setStatus("TOW_APPROACHING");
+            availableMsu.setTargetTowId(brokenVehicle.getId());
 
             if (driver != null) { driver.setStatus("BUSY"); driverRepository.save(driver); }
 
-            vehicleRepository.save(msu);
+            vehicleRepository.save(availableMsu);
             orderRepository.save(towOrder);
+        } else {
+            queueMsuJob(brokenVehicle);
+        }
 
-            messagingTemplate.convertAndSend("/topic/updates", "ORDERS");
-            messagingTemplate.convertAndSend("/topic/updates", "VEHICLES");
-            messagingTemplate.convertAndSend("/topic/updates", "DRIVERS");
+        messagingTemplate.convertAndSend("/topic/updates", "ORDERS");
+        messagingTemplate.convertAndSend("/topic/updates", "VEHICLES");
+        messagingTemplate.convertAndSend("/topic/updates", "DRIVERS");
+    }
+
+    private void queueMsuJob(Vehicle brokenVehicle) {
+        List<Vehicle> busyMsuList = vehicleRepository.findAll().stream()
+                .filter(v -> Boolean.TRUE.equals(v.getIsServiceUnit()) &&
+                        ("TOW_APPROACHING".equals(v.getStatus()) || "TOWING".equals(v.getStatus()) || "WAITING_FOR_CARGO_CLEARANCE".equals(v.getStatus())) &&
+                        v.getNextTowTargetId() == null)
+                .toList();
+
+        if (busyMsuList.isEmpty()) return;
+
+        Location nearestBaseToBroken = locationRepository.findAll().stream()
+                .filter(l -> "BASE".equals(l.getType()))
+                .min(Comparator.comparingDouble(l -> physicsService.calculateDistance(brokenVehicle.getCurrentLat(), brokenVehicle.getCurrentLng(), l.getLatitude(), l.getLongitude())))
+                .orElse(null);
+
+        record MsuCandidate(Vehicle msu, double estimatedTotalDistance, Location projectedEndBase) {}
+
+        List<MsuCandidate> candidates = new ArrayList<>();
+
+        for (Vehicle msu : busyMsuList) {
+            double currentTaskRemainingKm = 0.0;
+            Location projectedEndBase = null;
+
+            Order activeTowOrder = orderRepository.findByStatusIn(List.of("TOW_APPROACHING", "TOWING", "WAITING_FOR_CARGO_CLEARANCE"))
+                    .stream().filter(o -> o.getVehicle() != null && o.getVehicle().getId().equals(msu.getId()))
+                    .findFirst().orElse(null);
+
+            if (activeTowOrder != null) {
+                if ("TOWING".equals(activeTowOrder.getStatus()) && activeTowOrder.getEndLocation() != null) {
+                    projectedEndBase = activeTowOrder.getEndLocation();
+                    double totalDist = activeTowOrder.getRouteDistanceTransit() != null ? activeTowOrder.getRouteDistanceTransit() / 1000.0 : 0.0;
+                    currentTaskRemainingKm = totalDist * (1.0 - (activeTowOrder.getProgress() != null ? activeTowOrder.getProgress() : 0));
+                } else if ("TOW_APPROACHING".equals(activeTowOrder.getStatus()) || "WAITING_FOR_CARGO_CLEARANCE".equals(activeTowOrder.getStatus())) {
+                    Vehicle currentTarget = vehicleRepository.findById(msu.getTargetTowId()).orElse(null);
+                    if (currentTarget != null) {
+                        projectedEndBase = locationRepository.findAll().stream()
+                                .filter(l -> "BASE".equals(l.getType()))
+                                .min(Comparator.comparingDouble(l -> physicsService.calculateDistance(currentTarget.getCurrentLat(), currentTarget.getCurrentLng(), l.getLatitude(), l.getLongitude())))
+                                .orElse(null);
+
+                        double approachRemaining = 0.0;
+                        if ("TOW_APPROACHING".equals(activeTowOrder.getStatus())) {
+                            double approachTotal = activeTowOrder.getRouteDistanceApproaching() != null ? activeTowOrder.getRouteDistanceApproaching() / 1000.0 : 0.0;
+                            approachRemaining = approachTotal * (1.0 - (activeTowOrder.getProgress() != null ? activeTowOrder.getProgress() : 0));
+                        }
+
+                        double towingDist = 0.0;
+                        if (projectedEndBase != null) {
+                            towingDist = physicsService.calculateDistance(currentTarget.getCurrentLat(), currentTarget.getCurrentLng(), projectedEndBase.getLatitude(), projectedEndBase.getLongitude());
+                        }
+
+                        currentTaskRemainingKm = approachRemaining + towingDist;
+                    }
+                }
+            }
+
+            if (projectedEndBase != null) {
+                double distToNewBroken = physicsService.calculateDistance(projectedEndBase.getLatitude(), projectedEndBase.getLongitude(), brokenVehicle.getCurrentLat(), brokenVehicle.getCurrentLng());
+                candidates.add(new MsuCandidate(msu, currentTaskRemainingKm + distToNewBroken, projectedEndBase));
+            }
+        }
+
+        candidates.sort(Comparator.comparingDouble(MsuCandidate::estimatedTotalDistance));
+        List<MsuCandidate> top3 = candidates.subList(0, Math.min(3, candidates.size()));
+
+        MsuCandidate bestCandidate = null;
+        RoutingService.RouteInfo bestRoute = null;
+        double minRealDistance = Double.MAX_VALUE;
+
+        for (MsuCandidate cand : top3) {
+            RoutingService.RouteInfo route = routingService.getRoute(
+                    cand.projectedEndBase().getLatitude(), cand.projectedEndBase().getLongitude(),
+                    brokenVehicle.getCurrentLat(), brokenVehicle.getCurrentLng()
+            );
+
+            if (route != null) {
+                double realTotal = cand.estimatedTotalDistance() - physicsService.calculateDistance(cand.projectedEndBase().getLatitude(), cand.projectedEndBase().getLongitude(), brokenVehicle.getCurrentLat(), brokenVehicle.getCurrentLng()) + (route.distance() / 1000.0);
+                if (realTotal < minRealDistance) {
+                    minRealDistance = realTotal;
+                    bestCandidate = cand;
+                    bestRoute = route;
+                }
+            }
+        }
+
+        if (bestCandidate != null && bestRoute != null) {
+            Vehicle msuToQueue = bestCandidate.msu();
+            msuToQueue.setNextTowTargetId(brokenVehicle.getId());
+            msuToQueue.setNextTowPolyline(bestRoute.polyline());
+            msuToQueue.setNextTowDistance(bestRoute.distance());
+            vehicleRepository.save(msuToQueue);
         }
     }
 

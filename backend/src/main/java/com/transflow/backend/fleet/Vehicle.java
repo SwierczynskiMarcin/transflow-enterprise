@@ -32,4 +32,9 @@ public class Vehicle {
 
     private Boolean isServiceUnit = false;
     private Long targetTowId;
+
+    private Long nextTowTargetId;
+    @Column(columnDefinition = "TEXT")
+    private String nextTowPolyline;
+    private Double nextTowDistance;
 }

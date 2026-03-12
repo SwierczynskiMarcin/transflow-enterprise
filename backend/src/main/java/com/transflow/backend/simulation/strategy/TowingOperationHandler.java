@@ -1,5 +1,7 @@
 package com.transflow.backend.simulation.strategy;
 
+import com.transflow.backend.fleet.Driver;
+import com.transflow.backend.fleet.DriverRepository;
 import com.transflow.backend.fleet.Vehicle;
 import com.transflow.backend.fleet.VehicleRepository;
 import com.transflow.backend.logistics.Location;
@@ -24,6 +26,7 @@ public class TowingOperationHandler implements OrderStateHandler {
     private final OrderRepository orderRepository;
     private final LocationRepository locationRepository;
     private final RoutingService routingService;
+    private final DriverRepository driverRepository;
 
     @Override
     public boolean supports(String status) {
@@ -68,8 +71,7 @@ public class TowingOperationHandler implements OrderStateHandler {
                     }
                 } else {
                     order.setStatus("COMPLETED");
-                    vehicle.setStatus("AVAILABLE");
-                    vehicle.setTargetTowId(null);
+                    triggerNextMissionOrFinish(vehicle, ctx);
                 }
                 ctx.setBroadcastOrders(true);
                 ctx.setBroadcastVehicles(true);
@@ -90,8 +92,7 @@ public class TowingOperationHandler implements OrderStateHandler {
                 }
             } else {
                 order.setStatus("COMPLETED");
-                vehicle.setStatus("AVAILABLE");
-                vehicle.setTargetTowId(null);
+                triggerNextMissionOrFinish(vehicle, ctx);
                 ctx.setBroadcastOrders(true);
                 ctx.setBroadcastVehicles(true);
             }
@@ -119,7 +120,7 @@ public class TowingOperationHandler implements OrderStateHandler {
                 ctx.addTickUpdate(new VehicleSimulationDTO(
                         target.getId(), target.getPlateNumber(), target.getBrand(), target.getModel(),
                         target.getCurrentLat(), target.getCurrentLng(), target.getStatus(), null,
-                        0.0, 0.0
+                        0.0, 0.0, target.getNextTowTargetId()
                 ));
             }
 
@@ -128,11 +129,12 @@ public class TowingOperationHandler implements OrderStateHandler {
 
             if (order.getProgress() >= 1.0) {
                 order.setStatus("COMPLETED");
-                vehicle.setStatus("AVAILABLE");
-                vehicle.setTargetTowId(null);
                 if (target != null) {
                     target.setStatus("AVAILABLE");
                 }
+
+                triggerNextMissionOrFinish(vehicle, ctx);
+
                 ctx.setBroadcastOrders(true);
                 ctx.setBroadcastVehicles(true);
             }
@@ -157,5 +159,35 @@ public class TowingOperationHandler implements OrderStateHandler {
         order.setProgress(0.0);
         towTruck.setStatus("TOWING");
         target.setStatus("BEING_TOWED");
+    }
+
+    private void triggerNextMissionOrFinish(Vehicle vehicle, SimulationUpdateContext ctx) {
+        vehicle.setTargetTowId(null);
+
+        if (vehicle.getNextTowTargetId() != null) {
+            Driver driver = driverRepository.findByAssignedVehicleId(vehicle.getId()).orElse(null);
+
+            Order newTowOrder = new Order();
+            newTowOrder.setVehicle(vehicle);
+            newTowOrder.setDriver(driver);
+            newTowOrder.setStatus("TOW_APPROACHING");
+            newTowOrder.setStartLatApproaching(vehicle.getCurrentLat());
+            newTowOrder.setStartLngApproaching(vehicle.getCurrentLng());
+            newTowOrder.setRoutePolylineApproaching(vehicle.getNextTowPolyline() != null ? vehicle.getNextTowPolyline() : "");
+            newTowOrder.setRouteDistanceApproaching(vehicle.getNextTowDistance() != null ? vehicle.getNextTowDistance() : 0.0);
+            newTowOrder.setProgress(0.0);
+            newTowOrder.setGpsDistance(0.0);
+
+            vehicle.setStatus("TOW_APPROACHING");
+            vehicle.setTargetTowId(vehicle.getNextTowTargetId());
+
+            vehicle.setNextTowTargetId(null);
+            vehicle.setNextTowPolyline(null);
+            vehicle.setNextTowDistance(null);
+
+            ctx.addOrder(newTowOrder);
+        } else {
+            vehicle.setStatus("AVAILABLE");
+        }
     }
 }
