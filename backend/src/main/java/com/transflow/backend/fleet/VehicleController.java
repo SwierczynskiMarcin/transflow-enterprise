@@ -70,19 +70,28 @@ public class VehicleController {
 
     @PostMapping("/{id}/breakdown")
     public ResponseEntity<?> triggerBreakdown(@PathVariable Long id) {
-        return vehicleRepository.findById(id).map(vehicle -> {
-            if ("BROKEN".equals(vehicle.getStatus()) || "WAITING_FOR_TOW".equals(vehicle.getStatus()) || "BEING_TOWED".equals(vehicle.getStatus())) {
-                throw new IllegalArgumentException("Pojazd już jest wyłączony z operacji.");
+        int maxRetries = 5;
+        for (int i = 0; i < maxRetries; i++) {
+            try {
+                return vehicleRepository.findById(id).map(vehicle -> {
+                    if ("BROKEN".equals(vehicle.getStatus()) || "WAITING_FOR_TOW".equals(vehicle.getStatus()) || "BEING_TOWED".equals(vehicle.getStatus())) {
+                        throw new IllegalArgumentException("Pojazd już jest wyłączony z operacji.");
+                    }
+                    if (Boolean.TRUE.equals(vehicle.getIsServiceUnit())) {
+                        throw new IllegalArgumentException("Jednostki MSU nie ulegają awariom krytycznym.");
+                    }
+                    vehicle.setStatus("BROKEN");
+                    vehicleRepository.save(vehicle);
+                    messagingTemplate.convertAndSend("/topic/updates", "VEHICLES");
+                    messagingTemplate.convertAndSend("/topic/updates", "ORDERS");
+                    return ResponseEntity.ok().build();
+                }).orElse(ResponseEntity.notFound().build());
+            } catch (ObjectOptimisticLockingFailureException e) {
+                if (i == maxRetries - 1) throw e;
+                try { Thread.sleep(150); } catch (InterruptedException ignored) {}
             }
-            if (Boolean.TRUE.equals(vehicle.getIsServiceUnit())) {
-                throw new IllegalArgumentException("Jednostki MSU nie ulegają awariom krytycznym.");
-            }
-            vehicle.setStatus("BROKEN");
-            vehicleRepository.save(vehicle);
-            messagingTemplate.convertAndSend("/topic/updates", "VEHICLES");
-            messagingTemplate.convertAndSend("/topic/updates", "ORDERS");
-            return ResponseEntity.ok().build();
-        }).orElse(ResponseEntity.notFound().build());
+        }
+        return ResponseEntity.ok().build();
     }
 
     @DeleteMapping("/{id}")

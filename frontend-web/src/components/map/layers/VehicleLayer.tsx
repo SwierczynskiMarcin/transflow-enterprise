@@ -28,8 +28,8 @@ const createTruckIcon = (colorClass: string, glowColor: string, isSelected: bool
     return L.divIcon({
         className: 'bg-transparent border-none',
         html: htmlString,
-        iconSize: [40, 40],
-        iconAnchor:[20 - offsetX, 20 - offsetY]
+        iconSize:[40, 40],
+        iconAnchor: [20 - offsetX, 20 - offsetY]
     });
 };
 
@@ -113,12 +113,15 @@ export default function VehicleLayer() {
         const onRoad: VehicleData[] =[];
         Array.from(trucks.values()).forEach(truck => {
             let isParked = false;
-            for (const loc of locations) {
-                if (calculateDistance(truck.currentLat, truck.currentLng, loc.latitude, loc.longitude) <= 0.5) {
-                    isParked = true;
-                    break;
+            if (truck.status === 'AVAILABLE') {
+                for (const loc of locations) {
+                    if (calculateDistance(truck.currentLat, truck.currentLng, loc.latitude, loc.longitude) <= 0.5) {
+                        isParked = true;
+                        break;
+                    }
                 }
             }
+
             if (!isParked || truck.status === 'WAITING_FOR_TOW' || truck.status === 'BEING_TOWED') {
                 onRoad.push(truck);
             }
@@ -158,7 +161,7 @@ export default function VehicleLayer() {
             }
         });
         return truckOffsets;
-    },[trucksOnRoad, locations]);
+    }, [trucksOnRoad, locations]);
 
     return (
         <>

@@ -8,13 +8,14 @@ export default function SettingsManager() {
     const { trucks, refreshLocations, refreshVehicles, refreshRoutes, refreshOrders } = useSimulation();
     const { showToast } = useToast();
 
-    const [loadingAction, setLoadingAction] = useState<string | null>(null);
-    const[dispatchStatus, setDispatchStatus] = useState<{ active: boolean, requested: number, initialMax: number } | null>(null);
+    const[loadingAction, setLoadingAction] = useState<string | null>(null);
+    const [dispatchStatus, setDispatchStatus] = useState<{ active: boolean, requested: number, initialMax: number } | null>(null);
+    const[actualDispatched, setActualDispatched] = useState(0);
 
     const availableTrucksWithDrivers = Array.from(trucks.values()).filter(t => t.status === 'AVAILABLE' && t.driverName && t.driverName !== 'Brak przypisania');
     const maxDispatch = availableTrucksWithDrivers.length;
 
-    const[dispatchCount, setDispatchCount] = useState(1);
+    const [dispatchCount, setDispatchCount] = useState(1);
 
     useEffect(() => {
         if (!dispatchStatus?.active) {
@@ -24,19 +25,30 @@ export default function SettingsManager() {
                 setDispatchCount(0);
             }
         }
+    },[maxDispatch, dispatchStatus]);
+
+    useEffect(() => {
+        if (dispatchStatus?.active) {
+            const dispatched = dispatchStatus.initialMax - maxDispatch;
+            if (dispatched > actualDispatched) {
+                setActualDispatched(dispatched);
+            }
+        } else {
+            setActualDispatched(0);
+        }
     }, [maxDispatch, dispatchStatus]);
 
     useEffect(() => {
         if (loadingAction === 'dispatch' && dispatchStatus) {
-            const dispatched = dispatchStatus.initialMax - maxDispatch;
-            if (dispatched >= dispatchStatus.requested || maxDispatch === 0) {
+            if (actualDispatched >= dispatchStatus.requested || maxDispatch === 0) {
                 setLoadingAction(null);
                 setDispatchStatus(null);
-                showToast(`Zakończono pracę dyspozytora. Wysłano ${dispatched} pojazdów w trasy.`, 'success');
+                setActualDispatched(0);
+                showToast(`Zakończono pracę dyspozytora. Wysłano ${actualDispatched} pojazdów w trasy.`, 'success');
                 Promise.all([refreshVehicles(), refreshRoutes(), refreshOrders()]).catch(() => {});
             }
         }
-    },[maxDispatch, loadingAction, dispatchStatus, showToast, refreshVehicles, refreshRoutes, refreshOrders]);
+    },[maxDispatch, loadingAction, dispatchStatus, actualDispatched, showToast, refreshVehicles, refreshRoutes, refreshOrders]);
 
     const handleAction = async (actionId: string, actionFn: () => Promise<any>, successText: string) => {
         if (actionId === 'clear' && !confirm("UWAGA! Ta operacja wywoła polecenie SQL TRUNCATE CASCADE. Bezpowrotnie usunie wszystkie dane, pojazdy, zlecenia i bazy z systemu oraz wyzeruje identyfikatory (ID). Kontynuować?")) {
@@ -78,8 +90,7 @@ export default function SettingsManager() {
         }
     };
 
-    const dispatchedCount = dispatchStatus ? Math.max(0, dispatchStatus.initialMax - maxDispatch) : 0;
-    const progressPercent = dispatchStatus ? Math.min(100, (dispatchedCount / dispatchStatus.requested) * 100) : 0;
+    const progressPercent = dispatchStatus ? Math.min(100, (actualDispatched / dispatchStatus.requested) * 100) : 0;
 
     return (
         <div className="p-8 h-full w-full overflow-y-auto bg-slate-900 text-slate-200">
@@ -156,7 +167,7 @@ export default function SettingsManager() {
                             <div className="w-full flex flex-col gap-2">
                                 <div className="flex justify-between text-xs font-bold uppercase tracking-wider text-slate-400">
                                     <span className="flex items-center gap-2"><Loader2 className="animate-spin text-amber-400" size={14}/> Trwa zadanie w tle (Background Job)...</span>
-                                    <span className="text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded">{dispatchedCount} / {dispatchStatus.requested}</span>
+                                    <span className="text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded">{actualDispatched} / {dispatchStatus.requested}</span>
                                 </div>
                                 <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden shadow-inner">
                                     <div className="bg-amber-400 h-full transition-all duration-300" style={{ width: `${progressPercent}%` }}></div>

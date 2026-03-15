@@ -7,36 +7,37 @@ import { calculateDistance } from '../../utils/mapUtils';
 import { useToast } from '../../context/ToastContext';
 
 export default function VehicleManager() {
-    const { trucks, locations, orders } = useSimulation();
+    const { trucks, locations, orders, refreshVehicles } = useSimulation();
     const { showToast } = useToast();
-    const[vehiclesData, setVehiclesData] = useState<any[]>([]);
+    const [vehiclesData, setVehiclesData] = useState<any[]>([]);
     const containerRef = useRef<HTMLDivElement>(null);
 
     const[isFormOpen, setIsFormOpen] = useState(false);
-    const[editingId, setEditingId] = useState<number | null>(null);
-    const[isPickerMapOpen, setIsPickerMapOpen] = useState(false);
+    const [editingId, setEditingId] = useState<number | null>(null);
+    const [isPickerMapOpen, setIsPickerMapOpen] = useState(false);
 
     const [version, setVersion] = useState<number>(0);
-    const[plate, setPlate] = useState('');
-    const[brand, setBrand] = useState('');
-    const[model, setModel] = useState('');
-    const[consumption, setConsumption] = useState(25);
-    const [capacity, setCapacity] = useState(600);
-    const[lat, setLat] = useState(52.2297);
-    const[lng, setLng] = useState(21.0122);
-    const[isMSU, setIsMSU] = useState(false);
+    const [plate, setPlate] = useState('');
+    const [brand, setBrand] = useState('');
+    const [model, setModel] = useState('');
+    const [consumption, setConsumption] = useState(25);
+    const[capacity, setCapacity] = useState(600);
+    const [lat, setLat] = useState(52.2297);
+    const [lng, setLng] = useState(21.0122);
+    const [isMSU, setIsMSU] = useState(false);
+
+    const fetchDBData = async () => {
+        try {
+            const data = await getVehicles();
+            setVehiclesData(data);
+        } catch (err) {
+            console.error(err);
+        }
+    };
 
     useEffect(() => {
-        const fetchDBData = async () => {
-            try {
-                const data = await getVehicles();
-                setVehiclesData(data);
-            } catch (err) {
-                console.error(err);
-            }
-        };
         fetchDBData();
-    }, [trucks]);
+    },[]);
 
     const sortedVehicles = useMemo(() => {
         return [...vehiclesData].sort((a, b) => {
@@ -76,6 +77,8 @@ export default function VehicleManager() {
         if (!confirm('Czy na pewno chcesz usunąć ten pojazd?')) return;
         try {
             await deleteVehicle(id);
+            setVehiclesData(prev => prev.filter(v => v.id !== id));
+            await refreshVehicles();
             showToast('Pojazd został usunięty z floty', 'success');
         } catch (error: any) {
             showToast(error.message, 'error');
@@ -95,6 +98,8 @@ export default function VehicleManager() {
                 showToast('Nowy pojazd został dodany do floty', 'success');
             }
             resetForm();
+            await fetchDBData();
+            await refreshVehicles();
         } catch (error: any) {
             showToast(error.message, 'error');
         }

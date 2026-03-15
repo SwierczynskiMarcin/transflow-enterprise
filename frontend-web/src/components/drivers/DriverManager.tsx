@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { User, Plus, Trash2, Edit2, X, AlertTriangle, Truck, MapPin } from 'lucide-react';
+import { Client } from '@stomp/stompjs';
+import SockJS from 'sockjs-client';
 import { useSimulation } from '../../context/SimulationContext';
 import { getDrivers, addDriver, updateDriver, deleteDriver, getVehicles } from '../../api/fleetApi';
 import { useToast } from '../../context/ToastContext';
@@ -13,15 +15,15 @@ export default function DriverManager() {
     const { showToast } = useToast();
     const[drivers, setDrivers] = useState<DriverDB[]>([]);
     const [vehicles, setVehicles] = useState<VehicleDB[]>([]);
-    const[isFormOpen, setIsFormOpen] = useState(false);
+    const [isFormOpen, setIsFormOpen] = useState(false);
     const[editingId, setEditingId] = useState<number | null>(null);
     const containerRef = useRef<HTMLDivElement>(null);
 
-    const[version, setVersion] = useState<number>(0);
-    const[firstName, setFirstName] = useState('');
+    const [version, setVersion] = useState<number>(0);
+    const [firstName, setFirstName] = useState('');
     const [lastName, setLastName] = useState('');
-    const[phone, setPhone] = useState('');
-    const[selectedVehicleId, setSelectedVehicleId] = useState<string>('');
+    const [phone, setPhone] = useState('');
+    const [selectedVehicleId, setSelectedVehicleId] = useState<string>('');
 
     const loadData = async () => {
         try {
@@ -33,7 +35,26 @@ export default function DriverManager() {
         }
     };
 
-    useEffect(() => { loadData(); },[]);
+    useEffect(() => {
+        loadData();
+
+        const client = new Client({
+            webSocketFactory: () => new SockJS('http://localhost:8080/ws-trucks'),
+            reconnectDelay: 5000,
+            onConnect: () => {
+                client.subscribe('/topic/updates', (msg) => {
+                    if (msg.body === 'DRIVERS' || msg.body === 'VEHICLES') {
+                        loadData();
+                    }
+                });
+            }
+        });
+
+        client.activate();
+        return () => {
+            client.deactivate();
+        };
+    },[]);
 
     const sortedDrivers = useMemo(() => {
         return [...drivers].sort((a, b) => {
@@ -149,7 +170,7 @@ export default function DriverManager() {
         }
 
         if (liveTruck.status === 'BUSY') {
-            const activeOrder = orders.find(o => o.vehicle && o.vehicle.id === vehicleId &&['APPROACHING', 'LOADING', 'IN_TRANSIT'].includes(o.status));
+            const activeOrder = orders.find(o => o.vehicle && o.vehicle.id === vehicleId && ['APPROACHING', 'LOADING', 'IN_TRANSIT'].includes(o.status));
             if (activeOrder) {
                 return (
                     <span className="flex items-center gap-1 text-cyan-400 font-medium">
@@ -183,7 +204,16 @@ export default function DriverManager() {
         !drivers.some(d => d.assignedVehicle?.id === v.id && d.id !== editingId)
     );
 
-    const isEditingBusy = editingId ? (drivers.find(d => d.id === editingId)?.status === 'BUSY' || drivers.find(d => d.id === editingId)?.status === 'BROKEN' || trucks.get(editingId)?.status === 'RESCUE_MISSION' || trucks.get(editingId)?.status === 'HANDOVER' || trucks.get(editingId)?.status === 'WAITING_FOR_TOW') : false;
+    const driverVehicleId = drivers.find(d => d.id === editingId)?.assignedVehicle?.id;
+    const liveTruck = driverVehicleId ? trucks.get(driverVehicleId) : undefined;
+
+    const isEditingBusy = editingId ? (
+        drivers.find(d => d.id === editingId)?.status === 'BUSY' ||
+        drivers.find(d => d.id === editingId)?.status === 'BROKEN' ||
+        liveTruck?.status === 'RESCUE_MISSION' ||
+        liveTruck?.status === 'HANDOVER' ||
+        liveTruck?.status === 'WAITING_FOR_TOW'
+    ) : false;
 
     return (
         <div ref={containerRef} className="p-8 h-full w-full overflow-y-auto bg-slate-900 text-slate-200 relative">

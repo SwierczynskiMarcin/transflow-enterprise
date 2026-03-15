@@ -7,7 +7,7 @@ export function useSimulationData() {
     const [trucks, setTrucks] = useState<Map<number, VehicleData>>(new Map());
     const [locations, setLocations] = useState<LocationData[]>([]);
     const[activeRoutes, setActiveRoutes] = useState<Map<number, ActiveRoute>>(new Map());
-    const[orders, setOrders] = useState<OrderData[]>([]);
+    const [orders, setOrders] = useState<OrderData[]>([]);
 
     const refreshLocations = useCallback(async () => {
         try {
@@ -30,7 +30,7 @@ export function useSimulationData() {
                 const newMap = new Map(prev);
                 data.forEach(r => {
                     const truck = newMap.get(r.vehicleId);
-                    if (truck && truck.orderStatus !== r.orderStatus && (truck.status === 'BUSY' || truck.status === 'TOW_APPROACHING' || truck.status === 'TOWING')) {
+                    if (truck && truck.orderStatus !== r.orderStatus) {
                         newMap.set(r.vehicleId, { ...truck, orderStatus: r.orderStatus });
                         changed = true;
                     }
@@ -99,7 +99,7 @@ export function useSimulationData() {
                             currentLng: v.currentLng || 19.0,
                             status: v.status || 'AVAILABLE',
                             orderStatus: isAvailable ? undefined : existing?.orderStatus,
-                            progress: isAvailable ? 0 : (forceOverride ? 0 : (existing?.progress || 0)),
+                            progress: isAvailable ? 0 : (existing?.progress || 0),
                             gpsDistance: forceOverride ? 0 : (existing?.gpsDistance || 0),
                             driverName: driverMap.get(v.id) || 'Brak przypisania',
                             lastKinematicUpdate: existing?.lastKinematicUpdate || 0

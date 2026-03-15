@@ -57,7 +57,7 @@ export default function InfoHUD() {
             setTimeout(async () => {
                 try {
                     await autoAssignRescue(targetId);
-                    showToast('Sukces. Ratownik Cargo oraz jednostka MSU zostały zadysponowane!', 'success');
+                    showToast('Sukces. Moduł ratunkowy przetworzył incydent.', 'success');
                 } catch (error: any) {
                     showToast(error.message, 'error');
                 } finally {
@@ -115,6 +115,12 @@ export default function InfoHUD() {
                                     <div className="w-full bg-slate-900 rounded-full h-1.5 overflow-hidden">
                                         <div className={`h-full transition-all duration-1000 ${vehicleData.status === 'BROKEN' ? 'bg-rose-500' : vehicleData.status === 'WAITING_FOR_TOW' || vehicleData.status === 'BEING_TOWED' ? 'bg-slate-600' : vehicleData.status === 'WAITING_FOR_CARGO_CLEARANCE' ? 'bg-sky-400' : vehicleData.status === 'HANDOVER' ? 'bg-fuchsia-500' : vehicleData.status === 'RESCUE_MISSION' || vehicleData.orderStatus === 'RESCUE_APPROACHING' ? 'bg-indigo-500' : vehicleData.status === 'TOW_APPROACHING' || vehicleData.status === 'TOWING' ? 'bg-orange-500' : vehicleData.orderStatus === 'APPROACHING' ? 'bg-amber-400' : vehicleData.orderStatus === 'LOADING' ? 'bg-blue-400' : 'bg-cyan-400'}`} style={{ width: vehicleData.orderStatus === 'LOADING' || vehicleData.status === 'HANDOVER' || vehicleData.status === 'WAITING_FOR_CARGO_CLEARANCE' || vehicleData.status === 'WAITING_FOR_TOW' || vehicleData.status === 'BEING_TOWED' ? '100%' : `${vehicleData.progress * 100}%` }}></div>
                                     </div>
+
+                                    {(vehicleData as any).nextTowTargetId && (
+                                        <div className="mt-3 text-[10px] font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-1.5 rounded text-center uppercase tracking-wider">
+                                            Następna misja: Wrak #{(vehicleData as any).nextTowTargetId}
+                                        </div>
+                                    )}
 
                                     {!isAlertBlocked && (
                                         <button onClick={handleBreakdown} disabled={isSimulatingBreakdown} className="mt-2 w-full flex items-center justify-center gap-2 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 text-xs py-2 rounded-xl font-bold transition-colors disabled:opacity-50">

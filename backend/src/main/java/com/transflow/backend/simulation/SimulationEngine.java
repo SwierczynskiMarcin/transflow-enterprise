@@ -13,7 +13,6 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
@@ -37,7 +36,6 @@ public class SimulationEngine {
     private double timeMultiplier = 60.0;
 
     @Scheduled(fixedRate = 2000)
-    @Transactional
     public void simulateMovement() {
         messagingTemplate.convertAndSend("/topic/simulation",
                 new SimulationStateDTO(isRunning, timeMultiplier, virtualClock.getCurrentTime()));
@@ -52,66 +50,78 @@ public class SimulationEngine {
 
         SimulationUpdateContext ctx = new SimulationUpdateContext();
 
-        try {
-            for (Order order : activeOrders) {
-                Vehicle vehicle = order.getVehicle();
+        for (Order order : activeOrders) {
+            Vehicle vehicle = order.getVehicle();
 
-                if ("BROKEN".equals(vehicle.getStatus()) || "WAITING_FOR_TOW".equals(vehicle.getStatus()) || "BEING_TOWED".equals(vehicle.getStatus())) {
-                    ctx.addTickUpdate(new VehicleSimulationDTO(
-                            vehicle.getId(), vehicle.getPlateNumber(), vehicle.getBrand(), vehicle.getModel(),
-                            vehicle.getCurrentLat(), vehicle.getCurrentLng(), vehicle.getStatus(), order.getStatus(),
-                            order.getProgress(), order.getGpsDistance(), vehicle.getNextTowTargetId()
-                    ));
-                    continue;
-                }
-
-                if (order.getProgress() == null) order.setProgress(0.0);
-                if (order.getGpsDistance() == null) order.setGpsDistance(0.0);
-
-                if (order.getStartLatApproaching() == null) order.setStartLatApproaching(vehicle.getCurrentLat() != null ? vehicle.getCurrentLat() : 52.0);
-                if (order.getStartLngApproaching() == null) order.setStartLngApproaching(vehicle.getCurrentLng() != null ? vehicle.getCurrentLng() : 19.0);
-
-                double hoursPassed = (TICK_RATE_SECONDS * timeMultiplier) / 3600.0;
-                double distanceInTickKm = TRUCK_SPEED_KMH * hoursPassed;
-                double distanceInTickMeters = distanceInTickKm * 1000.0;
-
-                for (OrderStateHandler handler : stateHandlers) {
-                    if (handler.supports(order.getStatus())) {
-                        handler.handle(order, distanceInTickMeters, distanceInTickKm, ctx);
-                        break;
-                    }
-                }
-
-                ctx.addVehicle(vehicle);
-                ctx.addOrder(order);
-
+            if ("BROKEN".equals(vehicle.getStatus()) || "WAITING_FOR_TOW".equals(vehicle.getStatus()) || "BEING_TOWED".equals(vehicle.getStatus())) {
                 ctx.addTickUpdate(new VehicleSimulationDTO(
                         vehicle.getId(), vehicle.getPlateNumber(), vehicle.getBrand(), vehicle.getModel(),
                         vehicle.getCurrentLat(), vehicle.getCurrentLng(), vehicle.getStatus(), order.getStatus(),
                         order.getProgress(), order.getGpsDistance(), vehicle.getNextTowTargetId()
                 ));
+                continue;
             }
 
-            if (!ctx.getVehiclesToSave().isEmpty()) {
-                vehicleRepository.saveAll(ctx.getVehiclesToSave());
-            }
-            if (!ctx.getOrdersToSave().isEmpty()) {
-                orderRepository.saveAll(ctx.getOrdersToSave());
+            if (order.getProgress() == null) order.setProgress(0.0);
+            if (order.getGpsDistance() == null) order.setGpsDistance(0.0);
+
+            if (order.getStartLatApproaching() == null) order.setStartLatApproaching(vehicle.getCurrentLat() != null ? vehicle.getCurrentLat() : 52.0);
+            if (order.getStartLngApproaching() == null) order.setStartLngApproaching(vehicle.getCurrentLng() != null ? vehicle.getCurrentLng() : 19.0);
+
+            double hoursPassed = (TICK_RATE_SECONDS * timeMultiplier) / 3600.0;
+            double distanceInTickKm = TRUCK_SPEED_KMH * hoursPassed;
+            double distanceInTickMeters = distanceInTickKm * 1000.0;
+
+            for (OrderStateHandler handler : stateHandlers) {
+                if (handler.supports(order.getStatus())) {
+                    try {
+                        handler.handle(order, distanceInTickMeters, distanceInTickKm, ctx);
+                    } catch (Exception e) {
+                        System.err.println("[SimulationEngine] Błąd przetwarzania statusu " + order.getStatus() + " dla pojazdu " + vehicle.getId());
+                    }
+                    break;
+                }
             }
 
-            if (ctx.isBroadcastOrders()) {
-                messagingTemplate.convertAndSend("/topic/updates", "ORDERS");
-            }
-            if (ctx.isBroadcastVehicles()) {
-                messagingTemplate.convertAndSend("/topic/updates", "VEHICLES");
+            if (!"BROKEN".equals(vehicle.getStatus()) && !"WAITING_FOR_TOW".equals(vehicle.getStatus())) {
+                ctx.addVehicle(vehicle);
+                ctx.addOrder(order);
             }
 
-            if (!ctx.getTickUpdates().isEmpty()) {
-                messagingTemplate.convertAndSend("/topic/trucks", ctx.getTickUpdates());
-            }
+            ctx.addTickUpdate(new VehicleSimulationDTO(
+                    vehicle.getId(), vehicle.getPlateNumber(), vehicle.getBrand(), vehicle.getModel(),
+                    vehicle.getCurrentLat(), vehicle.getCurrentLng(), vehicle.getStatus(), order.getStatus(),
+                    order.getProgress(), order.getGpsDistance(), vehicle.getNextTowTargetId()
+            ));
+        }
 
-        } catch (ObjectOptimisticLockingFailureException e) {
-            System.err.println("[SimulationEngine] Tick pominięty: Wykryto współbieżną modyfikację danych (Optimistic Lock).");
+        if (!ctx.getVehiclesToSave().isEmpty()) {
+            for (Vehicle v : ctx.getVehiclesToSave()) {
+                try {
+                    vehicleRepository.save(v);
+                } catch (ObjectOptimisticLockingFailureException e) {
+                } catch (Exception ignored) {}
+            }
+        }
+
+        if (!ctx.getOrdersToSave().isEmpty()) {
+            for (Order o : ctx.getOrdersToSave()) {
+                try {
+                    orderRepository.save(o);
+                } catch (ObjectOptimisticLockingFailureException e) {
+                } catch (Exception ignored) {}
+            }
+        }
+
+        if (ctx.isBroadcastOrders()) {
+            messagingTemplate.convertAndSend("/topic/updates", "ORDERS");
+        }
+        if (ctx.isBroadcastVehicles()) {
+            messagingTemplate.convertAndSend("/topic/updates", "VEHICLES");
+        }
+
+        if (!ctx.getTickUpdates().isEmpty()) {
+            messagingTemplate.convertAndSend("/topic/trucks", ctx.getTickUpdates());
         }
     }
 }

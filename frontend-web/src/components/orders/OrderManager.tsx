@@ -34,14 +34,14 @@ export default function OrderManager() {
 
             return { ...order, computedStatus, computedProgress };
         });
-    },[orders, trucks]);
+    }, [orders, trucks]);
 
     const liveOrders = computedOrders
-        .filter(o =>['APPROACHING', 'LOADING', 'IN_TRANSIT', 'BROKEN', 'RESCUE_APPROACHING', 'HANDOVER', 'TOW_APPROACHING', 'WAITING_FOR_CARGO_CLEARANCE', 'TOWING'].includes(o.computedStatus))
+        .filter(o =>['APPROACHING', 'LOADING', 'IN_TRANSIT', 'BROKEN', 'RESCUE_APPROACHING', 'HANDOVER', 'TOW_APPROACHING', 'WAITING_FOR_CARGO_CLEARANCE', 'TOWING', 'WAITING_FOR_TOW', 'BEING_TOWED'].includes(o.computedStatus))
         .sort((a, b) => b.id - a.id);
 
     const historyOrders = computedOrders
-        .filter(o => o.computedStatus === 'COMPLETED' || o.computedStatus === 'WAITING_FOR_TOW' || o.computedStatus === 'BEING_TOWED')
+        .filter(o => o.computedStatus === 'COMPLETED')
         .sort((a, b) => b.id - a.id);
 
     const getStatusBadge = (status: string, progress: number) => {
@@ -112,7 +112,7 @@ export default function OrderManager() {
                                     <div className="flex flex-col gap-2">
                                         <div>{getStatusBadge(order.computedStatus, order.computedProgress)}</div>
                                         <div className="w-full bg-slate-700 rounded-full h-1.5 overflow-hidden">
-                                            <div className={`h-full transition-all duration-[2000ms] linear ${order.computedStatus === 'BROKEN' ? 'bg-rose-500' : order.computedStatus === 'RESCUE_APPROACHING' ? 'bg-indigo-500' : order.computedStatus === 'WAITING_FOR_CARGO_CLEARANCE' ? 'bg-sky-400' : order.computedStatus === 'HANDOVER' ? 'bg-fuchsia-500' : order.computedStatus === 'TOW_APPROACHING' || order.computedStatus === 'TOWING' ? 'bg-orange-500' : order.computedStatus === 'APPROACHING' ? 'bg-amber-400' : order.computedStatus === 'LOADING' ? 'bg-blue-400' : 'bg-cyan-400'}`} style={{ width: order.computedStatus === 'LOADING' || order.computedStatus === 'HANDOVER' || order.computedStatus === 'WAITING_FOR_CARGO_CLEARANCE' ? '100%' : `${order.computedProgress * 100}%` }}></div>
+                                            <div className={`h-full transition-all duration-[2000ms] linear ${order.computedStatus === 'BROKEN' ? 'bg-rose-500' : order.computedStatus === 'RESCUE_APPROACHING' ? 'bg-indigo-500' : order.computedStatus === 'WAITING_FOR_CARGO_CLEARANCE' ? 'bg-sky-400' : order.computedStatus === 'HANDOVER' ? 'bg-fuchsia-500' : order.computedStatus === 'TOW_APPROACHING' || order.computedStatus === 'TOWING' ? 'bg-orange-500' : order.computedStatus === 'APPROACHING' ? 'bg-amber-400' : order.computedStatus === 'LOADING' ? 'bg-blue-400' : order.computedStatus === 'WAITING_FOR_TOW' || order.computedStatus === 'BEING_TOWED' ? 'bg-slate-500' : 'bg-cyan-400'}`} style={{ width: order.computedStatus === 'LOADING' || order.computedStatus === 'HANDOVER' || order.computedStatus === 'WAITING_FOR_CARGO_CLEARANCE' || order.computedStatus === 'WAITING_FOR_TOW' || order.computedStatus === 'BEING_TOWED' ? '100%' : `${order.computedProgress * 100}%` }}></div>
                                         </div>
                                     </div>
                                 </td>

@@ -187,7 +187,38 @@ public class TowingOperationHandler implements OrderStateHandler {
 
             ctx.addOrder(newTowOrder);
         } else {
-            vehicle.setStatus("AVAILABLE");
+            Vehicle strandedWreck = vehicleRepository.findAll().stream()
+                    .filter(v -> "WAITING_FOR_TOW".equals(v.getStatus()))
+                    .filter(v -> vehicleRepository.findAll().stream().noneMatch(msu ->
+                            v.getId().equals(msu.getTargetTowId()) || v.getId().equals(msu.getNextTowTargetId())))
+                    .findFirst().orElse(null);
+
+            if (strandedWreck != null) {
+                RoutingService.RouteInfo route = routingService.getRoute(
+                        vehicle.getCurrentLat(), vehicle.getCurrentLng(),
+                        strandedWreck.getCurrentLat(), strandedWreck.getCurrentLng()
+                );
+
+                Driver driver = driverRepository.findByAssignedVehicleId(vehicle.getId()).orElse(null);
+
+                Order newTowOrder = new Order();
+                newTowOrder.setVehicle(vehicle);
+                newTowOrder.setDriver(driver);
+                newTowOrder.setStatus("TOW_APPROACHING");
+                newTowOrder.setStartLatApproaching(vehicle.getCurrentLat());
+                newTowOrder.setStartLngApproaching(vehicle.getCurrentLng());
+                newTowOrder.setRoutePolylineApproaching(route != null ? route.polyline() : "");
+                newTowOrder.setRouteDistanceApproaching(route != null ? route.distance() : 0.0);
+                newTowOrder.setProgress(0.0);
+                newTowOrder.setGpsDistance(0.0);
+
+                vehicle.setStatus("TOW_APPROACHING");
+                vehicle.setTargetTowId(strandedWreck.getId());
+
+                ctx.addOrder(newTowOrder);
+            } else {
+                vehicle.setStatus("AVAILABLE");
+            }
         }
     }
 }

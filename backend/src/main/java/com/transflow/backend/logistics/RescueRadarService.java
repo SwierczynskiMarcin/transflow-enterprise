@@ -94,26 +94,30 @@ public class RescueRadarService {
     }
 
     @Transactional
+    public void releaseRescueTarget(Long vehicleId) {
+        Vehicle v = vehicleRepository.findById(vehicleId).orElse(null);
+        if (v != null) {
+            v.setStatus("WAITING_FOR_TOW");
+            v.setTargetRescueId(null);
+            vehicleRepository.save(v);
+            orderRepository.findByStatusIn(List.of("RESCUE_APPROACHING"))
+                    .stream().filter(o -> o.getVehicle() != null && o.getVehicle().getId().equals(vehicleId))
+                    .findFirst().ifPresent(orderRepository::delete);
+        }
+    }
+
     public void autoAssignRescue(Long brokenVehicleId) {
-        Vehicle brokenVehicle = vehicleRepository.findById(brokenVehicleId)
-                .orElseThrow(() -> new IllegalArgumentException("Nie znaleziono pojazdu"));
+        Vehicle brokenVehicle = vehicleRepository.findById(brokenVehicleId).orElse(null);
+        if (brokenVehicle == null) return;
 
         Order cargoOrder = orderRepository.findByStatusIn(List.of("APPROACHING", "LOADING", "IN_TRANSIT", "HANDOVER"))
-                .stream().filter(o -> o.getVehicle() != null && o.getVehicle().getId().equals(brokenVehicle.getId()))
+                .stream().filter(o -> o.getVehicle() != null && o.getVehicle().getId().equals(brokenVehicleId))
                 .findFirst().orElse(null);
 
         if (cargoOrder == null && brokenVehicle.getTargetRescueId() != null) {
             Long originalWrakId = brokenVehicle.getTargetRescueId();
-
-            brokenVehicle.setStatus("WAITING_FOR_TOW");
-            brokenVehicle.setTargetRescueId(null);
-            vehicleRepository.save(brokenVehicle);
-
-            orderRepository.findByStatusIn(List.of("RESCUE_APPROACHING"))
-                    .stream().filter(o -> o.getVehicle() != null && o.getVehicle().getId().equals(brokenVehicle.getId()))
-                    .findFirst().ifPresent(orderRepository::delete);
-
-            dispatchTowTruck(brokenVehicle);
+            releaseRescueTarget(brokenVehicleId);
+            dispatchTowTruck(brokenVehicleId);
 
             messagingTemplate.convertAndSend("/topic/updates", "VEHICLES");
             messagingTemplate.convertAndSend("/topic/updates", "ORDERS");
@@ -124,23 +128,26 @@ public class RescueRadarService {
 
         if (brokenVehicle.getTargetRescueId() != null) {
             Long originalWrakId = brokenVehicle.getTargetRescueId();
-            brokenVehicle.setTargetRescueId(null);
-            vehicleRepository.save(brokenVehicle);
+            releaseRescueTarget(brokenVehicleId);
             autoAssignRescue(originalWrakId);
+            return;
         }
 
-        List<RescueCandidateDTO> candidates = scanForCandidates(brokenVehicle.getId());
+        List<RescueCandidateDTO> candidates = scanForCandidates(brokenVehicleId);
         if (!candidates.isEmpty()) {
-            assignRescue(candidates.get(0).vehicleId(), brokenVehicle.getId());
+            assignRescue(candidates.get(0).vehicleId(), brokenVehicleId);
         }
 
-        dispatchTowTruck(brokenVehicle);
+        dispatchTowTruck(brokenVehicleId);
     }
 
-    private void dispatchTowTruck(Vehicle brokenVehicle) {
+    private void dispatchTowTruck(Long brokenVehicleId) {
+        Vehicle brokenVehicle = vehicleRepository.findById(brokenVehicleId).orElse(null);
+        if (brokenVehicle == null) return;
+
         boolean alreadyTargeted = vehicleRepository.findAll().stream()
                 .anyMatch(v -> Boolean.TRUE.equals(v.getIsServiceUnit()) &&
-                        (brokenVehicle.getId().equals(v.getTargetTowId()) || brokenVehicle.getId().equals(v.getNextTowTargetId())));
+                        (brokenVehicleId.equals(v.getTargetTowId()) || brokenVehicleId.equals(v.getNextTowTargetId())));
         if (alreadyTargeted) return;
 
         Vehicle availableMsu = vehicleRepository.findAll().stream()
@@ -154,26 +161,7 @@ public class RescueRadarService {
                     brokenVehicle.getCurrentLat(), brokenVehicle.getCurrentLng()
             );
 
-            Driver driver = driverRepository.findByAssignedVehicleId(availableMsu.getId()).orElse(null);
-
-            Order towOrder = new Order();
-            towOrder.setVehicle(availableMsu);
-            towOrder.setDriver(driver);
-            towOrder.setStatus("TOW_APPROACHING");
-            towOrder.setStartLatApproaching(availableMsu.getCurrentLat());
-            towOrder.setStartLngApproaching(availableMsu.getCurrentLng());
-            towOrder.setRoutePolylineApproaching(route != null ? route.polyline() : "");
-            towOrder.setRouteDistanceApproaching(route != null ? route.distance() : 0.0);
-            towOrder.setProgress(0.0);
-            towOrder.setGpsDistance(0.0);
-
-            availableMsu.setStatus("TOW_APPROACHING");
-            availableMsu.setTargetTowId(brokenVehicle.getId());
-
-            if (driver != null) { driver.setStatus("BUSY"); driverRepository.save(driver); }
-
-            vehicleRepository.save(availableMsu);
-            orderRepository.save(towOrder);
+            applyTowDispatch(availableMsu.getId(), brokenVehicleId, route);
         } else {
             queueMsuJob(brokenVehicle);
         }
@@ -181,6 +169,32 @@ public class RescueRadarService {
         messagingTemplate.convertAndSend("/topic/updates", "ORDERS");
         messagingTemplate.convertAndSend("/topic/updates", "VEHICLES");
         messagingTemplate.convertAndSend("/topic/updates", "DRIVERS");
+    }
+
+    @Transactional
+    public void applyTowDispatch(Long msuId, Long brokenId, RoutingService.RouteInfo route) {
+        Vehicle msu = vehicleRepository.findById(msuId).orElse(null);
+        if (msu == null || !"AVAILABLE".equals(msu.getStatus())) return;
+
+        Driver driver = driverRepository.findByAssignedVehicleId(msu.getId()).orElse(null);
+
+        Order towOrder = new Order();
+        towOrder.setVehicle(msu);
+        towOrder.setDriver(driver);
+        towOrder.setStatus("TOW_APPROACHING");
+        towOrder.setStartLatApproaching(msu.getCurrentLat());
+        towOrder.setStartLngApproaching(msu.getCurrentLng());
+        towOrder.setRoutePolylineApproaching(route != null ? route.polyline() : "");
+        towOrder.setRouteDistanceApproaching(route != null ? route.distance() : 0.0);
+        towOrder.setProgress(0.0);
+        towOrder.setGpsDistance(0.0);
+
+        msu.setStatus("TOW_APPROACHING");
+        msu.setTargetTowId(brokenId);
+
+        if (driver != null) { driver.setStatus("BUSY"); driverRepository.save(driver); }
+        vehicleRepository.save(msu);
+        orderRepository.save(towOrder);
     }
 
     private void queueMsuJob(Vehicle brokenVehicle) {
@@ -191,11 +205,6 @@ public class RescueRadarService {
                 .toList();
 
         if (busyMsuList.isEmpty()) return;
-
-        Location nearestBaseToBroken = locationRepository.findAll().stream()
-                .filter(l -> "BASE".equals(l.getType()))
-                .min(Comparator.comparingDouble(l -> physicsService.calculateDistance(brokenVehicle.getCurrentLat(), brokenVehicle.getCurrentLng(), l.getLatitude(), l.getLongitude())))
-                .orElse(null);
 
         record MsuCandidate(Vehicle msu, double estimatedTotalDistance, Location projectedEndBase) {}
 
@@ -245,6 +254,7 @@ public class RescueRadarService {
         }
 
         candidates.sort(Comparator.comparingDouble(MsuCandidate::estimatedTotalDistance));
+        if (candidates.isEmpty()) return;
         List<MsuCandidate> top3 = candidates.subList(0, Math.min(3, candidates.size()));
 
         MsuCandidate bestCandidate = null;
@@ -268,15 +278,21 @@ public class RescueRadarService {
         }
 
         if (bestCandidate != null && bestRoute != null) {
-            Vehicle msuToQueue = bestCandidate.msu();
-            msuToQueue.setNextTowTargetId(brokenVehicle.getId());
-            msuToQueue.setNextTowPolyline(bestRoute.polyline());
-            msuToQueue.setNextTowDistance(bestRoute.distance());
-            vehicleRepository.save(msuToQueue);
+            applyMsuQueue(bestCandidate.msu().getId(), brokenVehicle.getId(), bestRoute);
         }
     }
 
     @Transactional
+    public void applyMsuQueue(Long msuId, Long brokenId, RoutingService.RouteInfo route) {
+        Vehicle msu = vehicleRepository.findById(msuId).orElse(null);
+        if (msu != null && msu.getNextTowTargetId() == null) {
+            msu.setNextTowTargetId(brokenId);
+            msu.setNextTowPolyline(route.polyline());
+            msu.setNextTowDistance(route.distance());
+            vehicleRepository.save(msu);
+        }
+    }
+
     public void assignRescue(Long rescuerId, Long brokenVehicleId) {
         Vehicle rescuer = vehicleRepository.findById(rescuerId).orElseThrow();
         Vehicle broken = vehicleRepository.findById(brokenVehicleId).orElseThrow();
@@ -292,15 +308,47 @@ public class RescueRadarService {
             targetLng = brokenOrder.getStartLocation().getLongitude();
         }
 
+        RoutingService.RouteInfo route;
+        if ("AVAILABLE".equals(rescuer.getStatus()) || "BUSY".equals(rescuer.getStatus())) {
+            double startLat = rescuer.getCurrentLat();
+            double startLng = rescuer.getCurrentLng();
+            if ("BUSY".equals(rescuer.getStatus())) {
+                Order currentOrder = orderRepository.findByStatusIn(List.of("IN_TRANSIT", "APPROACHING", "LOADING"))
+                        .stream().filter(o -> o.getVehicle() != null && o.getVehicle().getId().equals(rescuer.getId()))
+                        .findFirst().orElse(null);
+                if (currentOrder != null && currentOrder.getEndLocation() != null) {
+                    startLat = currentOrder.getEndLocation().getLatitude();
+                    startLng = currentOrder.getEndLocation().getLongitude();
+                }
+            }
+            route = routingService.getRoute(startLat, startLng, targetLat, targetLng);
+        } else {
+            return;
+        }
+
+        applyRescueAssignment(rescuer.getId(), broken.getId(), route);
+
+        messagingTemplate.convertAndSend("/topic/updates", "ORDERS");
+        messagingTemplate.convertAndSend("/topic/updates", "VEHICLES");
+        messagingTemplate.convertAndSend("/topic/updates", "DRIVERS");
+    }
+
+    @Transactional
+    public void applyRescueAssignment(Long rescuerId, Long brokenId, RoutingService.RouteInfo route) {
+        Vehicle rescuer = vehicleRepository.findById(rescuerId).orElse(null);
+        Vehicle broken = vehicleRepository.findById(brokenId).orElse(null);
+        if (rescuer == null || broken == null) return;
+
+        Order brokenOrder = orderRepository.findByStatusIn(List.of("APPROACHING", "LOADING", "IN_TRANSIT", "HANDOVER"))
+                .stream().filter(o -> o.getVehicle() != null && o.getVehicle().getId().equals(broken.getId()))
+                .findFirst().orElse(null);
+
+        if (brokenOrder == null) return;
+
         if ("AVAILABLE".equals(rescuer.getStatus())) {
             Driver driver = driverRepository.findByAssignedVehicleId(rescuer.getId()).orElse(null);
 
             if ("APPROACHING".equals(brokenOrder.getStatus())) {
-                RoutingService.RouteInfo route = routingService.getRoute(
-                        rescuer.getCurrentLat(), rescuer.getCurrentLng(),
-                        targetLat, targetLng
-                );
-
                 brokenOrder.setVehicle(rescuer);
                 brokenOrder.setDriver(driver);
                 brokenOrder.setRoutePolylineApproaching(route != null ? route.polyline() : "");
@@ -313,11 +361,6 @@ public class RescueRadarService {
                 if (driver != null) { driver.setStatus("BUSY"); driverRepository.save(driver); }
                 orderRepository.save(brokenOrder);
             } else {
-                RoutingService.RouteInfo route = routingService.getRoute(
-                        rescuer.getCurrentLat(), rescuer.getCurrentLng(),
-                        targetLat, targetLng
-                );
-
                 Order technicalOrder = new Order();
                 technicalOrder.setVehicle(rescuer);
                 technicalOrder.setDriver(driver);
@@ -340,30 +383,14 @@ public class RescueRadarService {
 
         } else if ("BUSY".equals(rescuer.getStatus())) {
             rescuer.setTargetRescueId(broken.getId());
-
-            Order currentOrder = orderRepository.findByStatusIn(List.of("IN_TRANSIT", "APPROACHING", "LOADING"))
-                    .stream().filter(o -> o.getVehicle() != null && o.getVehicle().getId().equals(rescuer.getId()))
-                    .findFirst().orElseThrow();
-
-            RoutingService.RouteInfo route = routingService.getRoute(
-                    currentOrder.getEndLocation().getLatitude(), currentOrder.getEndLocation().getLongitude(),
-                    targetLat, targetLng
-            );
             rescuer.setRescuePolyline(route != null ? route.polyline() : null);
             rescuer.setRescueDistance(route != null ? route.distance() : 0.0);
-
             vehicleRepository.save(rescuer);
 
             if ("APPROACHING".equals(brokenOrder.getStatus())) {
                 broken.setStatus("WAITING_FOR_TOW");
                 vehicleRepository.save(broken);
             }
-        } else {
-            throw new IllegalArgumentException("Pojazd w tym statusie nie może przyjąć misji ratunkowej.");
         }
-
-        messagingTemplate.convertAndSend("/topic/updates", "ORDERS");
-        messagingTemplate.convertAndSend("/topic/updates", "VEHICLES");
-        messagingTemplate.convertAndSend("/topic/updates", "DRIVERS");
     }
 }
