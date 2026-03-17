@@ -73,10 +73,7 @@ export default function DriverManager() {
             const plateA = a.assignedVehicle ? a.assignedVehicle.plateNumber : '';
             const plateB = b.assignedVehicle ? b.assignedVehicle.plateNumber : '';
 
-            if (plateA && plateB) {
-                return plateA.localeCompare(plateB);
-            }
-
+            if (plateA && plateB) return plateA.localeCompare(plateB);
             if (plateA && !plateB) return -1;
             if (!plateA && plateB) return 1;
 
@@ -97,10 +94,18 @@ export default function DriverManager() {
         containerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
-    const handleDelete = async (id: number) => {
-        if (!confirm('Czy na pewno chcesz usunąć kierowcę? Zostanie on odpięty od ewentualnej ciężarówki, a w historii zleceń pojawi się jako "Usunięty".')) return;
+    const handleDelete = async (driver: DriverDB) => {
+        const liveTruck = driver.assignedVehicle ? trucks.get(driver.assignedVehicle.id) : null;
+        const isActiveOnRoad = driver.status === 'BUSY' || liveTruck?.status === 'BUSY' || liveTruck?.status === 'RESCUE_MISSION';
+
+        const confirmMessage = isActiveOnRoad
+            ? `UWAGA: Kierowca ${driver.firstName} ${driver.lastName} jest aktualnie w trasie.\n\nPojazd ${driver.assignedVehicle?.plateNumber ?? ''} dokończy bieżącą trasę jako "bezzałogowy" i w historii zleceń pojawi się ostrzeżenie o braku kierowcy.\n\nCzy mimo to chcesz usunąć kierowcę?`
+            : `Czy na pewno chcesz usunąć kierowcę ${driver.firstName} ${driver.lastName}? Zostanie on odpięty od ewentualnej ciężarówki, a w historii zleceń pojawi się jako "Usunięty".`;
+
+        if (!confirm(confirmMessage)) return;
+
         try {
-            await deleteDriver(id);
+            await deleteDriver(driver.id);
             await loadData();
             await refreshVehicles();
             showToast('Kierowca został poprawnie usunięty z systemu', 'success');
@@ -161,7 +166,7 @@ export default function DriverManager() {
             );
         }
 
-        if (liveTruck.status === 'RESCUE_MISSION' || liveTruck.status === 'RESCUE_ARRIVED') {
+        if (liveTruck.status === 'RESCUE_MISSION' || liveTruck.orderStatus === 'RESCUE_APPROACHING') {
             return (
                 <span className="flex items-center gap-1 text-indigo-400 font-bold">
                     <Truck size={14} /> JEDZIE Z POMOCĄ TECHNICZNĄ
@@ -280,9 +285,9 @@ export default function DriverManager() {
                             <td className="p-4 text-sm">
                                 {resolveDriverLocationText(d)}
                             </td>
-                            <td className="p-4 flex justify-end gap-2 items-center">
+                            <td className="p-4 flex justify-end gap-2">
                                 <button onClick={() => handleEditClick(d)} className="p-2 bg-blue-500/10 text-blue-400 hover:bg-blue-500 hover:text-white rounded-lg transition" title="Edytuj"><Edit2 size={18} /></button>
-                                <button onClick={() => handleDelete(d.id)} className="p-2 bg-rose-500/10 text-rose-400 hover:bg-rose-500 hover:text-white rounded-lg transition" title="Usuń"><Trash2 size={18} /></button>
+                                <button onClick={() => handleDelete(d)} className="p-2 bg-rose-500/10 text-rose-400 hover:bg-rose-500 hover:text-white rounded-lg transition" title="Usuń"><Trash2 size={18} /></button>
                             </td>
                         </tr>
                     ))}

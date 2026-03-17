@@ -11,12 +11,13 @@ export default function InfoHUD() {
     const {
         hoveredVehicleId, selectedRouteVehicleId,
         hoveredLocationId, selectedLocationId,
-        setIsBuilderOpen, setStartLoc, setEndLoc, setSelectedTruckId
+        setIsBuilderOpen, setStartLoc, setEndLoc, setSelectedTruckId,
+        isBuilderOpen, startLoc
     } = useMapContext();
     const { trucks, locations } = useSimulation();
     const { showToast } = useToast();
 
-    const[isSimulatingBreakdown, setIsSimulatingBreakdown] = useState(false);
+    const [isSimulatingBreakdown, setIsSimulatingBreakdown] = useState(false);
 
     let targetType: 'none' | 'vehicle' | 'location' = 'none';
     let vehicleData: VehicleData | null = null;
@@ -29,6 +30,10 @@ export default function InfoHUD() {
 
     if (targetType === 'none') return null;
 
+    const isLocationSelectedAsStart = !!(startLoc && locationData && startLoc.id === locationData.id);
+    const builderAwaitingEnd = isBuilderOpen && !!startLoc && !isLocationSelectedAsStart;
+    const builderAwaitingStart = !isBuilderOpen || !startLoc;
+
     const handleSetStart = (loc: LocationData) => {
         setStartLoc(loc);
         setIsBuilderOpen(true);
@@ -37,7 +42,7 @@ export default function InfoHUD() {
             let closest = avail[0];
             let min = calculateDistance(loc.latitude, loc.longitude, closest.currentLat, closest.currentLng);
             for (let i = 1; i < avail.length; i++) {
-                let d = calculateDistance(loc.latitude, loc.longitude, avail[i].currentLat, avail[i].currentLng);
+                const d = calculateDistance(loc.latitude, loc.longitude, avail[i].currentLat, avail[i].currentLng);
                 if (d < min) { min = d; closest = avail[i]; }
             }
             setSelectedTruckId(closest.id);
@@ -116,9 +121,9 @@ export default function InfoHUD() {
                                         <div className={`h-full transition-all duration-1000 ${vehicleData.status === 'BROKEN' ? 'bg-rose-500' : vehicleData.status === 'WAITING_FOR_TOW' || vehicleData.status === 'BEING_TOWED' ? 'bg-slate-600' : vehicleData.status === 'WAITING_FOR_CARGO_CLEARANCE' ? 'bg-sky-400' : vehicleData.status === 'HANDOVER' ? 'bg-fuchsia-500' : vehicleData.status === 'RESCUE_MISSION' || vehicleData.orderStatus === 'RESCUE_APPROACHING' ? 'bg-indigo-500' : vehicleData.status === 'TOW_APPROACHING' || vehicleData.status === 'TOWING' ? 'bg-orange-500' : vehicleData.orderStatus === 'APPROACHING' ? 'bg-amber-400' : vehicleData.orderStatus === 'LOADING' ? 'bg-blue-400' : 'bg-cyan-400'}`} style={{ width: vehicleData.orderStatus === 'LOADING' || vehicleData.status === 'HANDOVER' || vehicleData.status === 'WAITING_FOR_CARGO_CLEARANCE' || vehicleData.status === 'WAITING_FOR_TOW' || vehicleData.status === 'BEING_TOWED' ? '100%' : `${vehicleData.progress * 100}%` }}></div>
                                     </div>
 
-                                    {(vehicleData as any).nextTowTargetId && (
+                                    {vehicleData.nextTowTargetId && (
                                         <div className="mt-3 text-[10px] font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-1.5 rounded text-center uppercase tracking-wider">
-                                            Następna misja: Wrak #{(vehicleData as any).nextTowTargetId}
+                                            Kolejna misja: Wrak #{vehicleData.nextTowTargetId}
                                         </div>
                                     )}
 
@@ -177,6 +182,11 @@ export default function InfoHUD() {
                                 <span className="text-[10px] uppercase tracking-wider font-bold text-slate-400">{locationData.companyName || 'Terminal Niezależny'}</span>
                             </div>
                         </div>
+                        {isLocationSelectedAsStart && (
+                            <span className="text-[9px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded uppercase tracking-wider">
+                                Punkt A
+                            </span>
+                        )}
                     </div>
                     <div className="p-4">
                         <span className={`text-[10px] font-bold px-2 py-1 rounded-full uppercase mb-4 inline-block ${locationData.type === 'BASE' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' : locationData.type === 'PORT' ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'}`}>
@@ -185,19 +195,40 @@ export default function InfoHUD() {
 
                         {selectedLocationId === locationData.id && (
                             <div className="flex gap-2 mt-2 animate-[fadeIn_0.3s_ease-out]">
-                                <button onClick={() => handleSetStart(locationData!)} className="flex-1 flex items-center justify-center gap-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 text-xs py-2.5 rounded-xl font-bold transition-colors">
+                                <button
+                                    onClick={() => handleSetStart(locationData!)}
+                                    className="flex-1 flex items-center justify-center gap-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 text-xs py-2.5 rounded-xl font-bold transition-colors"
+                                >
                                     <MapPin size={14} /> STĄD
                                 </button>
-                                <button onClick={() => { setEndLoc(locationData!); setIsBuilderOpen(true); }} className="flex-1 flex items-center justify-center gap-1.5 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 text-xs py-2.5 rounded-xl font-bold transition-colors">
+                                <button
+                                    onClick={() => { setEndLoc(locationData!); setIsBuilderOpen(true); }}
+                                    className={`flex-1 flex items-center justify-center gap-1.5 border text-xs py-2.5 rounded-xl font-bold transition-colors ${
+                                        builderAwaitingEnd
+                                            ? 'bg-rose-500/20 hover:bg-rose-500/30 border-rose-500/50 text-rose-300 shadow-[0_0_10px_rgba(239,68,68,0.2)] animate-pulse'
+                                            : 'bg-rose-500/10 hover:bg-rose-500/20 border-rose-500/30 text-rose-400'
+                                    }`}
+                                >
                                     <Flag size={14} /> TUTAJ
                                 </button>
                             </div>
                         )}
-                        {hoveredLocationId && !selectedLocationId && (
-                            <div className="text-[10px] text-slate-500 italic text-center mt-2 animate-pulse">
-                                Kliknij hub, aby utworzyć zlecenie.
-                            </div>
-                        )}
+
+                        <div className="mt-2 min-h-[20px]">
+                            {builderAwaitingEnd && hoveredLocationId && !selectedLocationId && (
+                                <div className="flex items-center gap-1.5 animate-[fadeIn_0.2s_ease-out]">
+                                    <Flag size={10} className="text-rose-400" />
+                                    <span className="text-[10px] text-rose-300 font-medium">
+                                        Kliknij hub, aby ustawić jako Punkt B.
+                                    </span>
+                                </div>
+                            )}
+                            {builderAwaitingStart && hoveredLocationId && !selectedLocationId && !isBuilderOpen && (
+                                <div className="text-[10px] text-slate-500 italic text-center animate-pulse">
+                                    Kliknij hub, aby utworzyć zlecenie.
+                                </div>
+                            )}
+                        </div>
                     </div>
                 </>
             )}

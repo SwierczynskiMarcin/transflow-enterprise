@@ -120,7 +120,7 @@ public class TowingOperationHandler implements OrderStateHandler {
                 ctx.addTickUpdate(new VehicleSimulationDTO(
                         target.getId(), target.getPlateNumber(), target.getBrand(), target.getModel(),
                         target.getCurrentLat(), target.getCurrentLng(), target.getStatus(), null,
-                        0.0, 0.0, target.getNextTowTargetId()
+                        0.0, 0.0, target.getNextTowTargetId(), target.getIsServiceUnit(), null
                 ));
             }
 
@@ -185,7 +185,9 @@ public class TowingOperationHandler implements OrderStateHandler {
             vehicle.setNextTowPolyline(null);
             vehicle.setNextTowDistance(null);
 
-            ctx.addOrder(newTowOrder);
+            ctx.addNewOrder(newTowOrder);
+            ctx.setBroadcastOrders(true);
+            ctx.setBroadcastVehicles(true);
         } else {
             Vehicle strandedWreck = vehicleRepository.findAll().stream()
                     .filter(v -> "WAITING_FOR_TOW".equals(v.getStatus()))
@@ -215,9 +217,12 @@ public class TowingOperationHandler implements OrderStateHandler {
                 vehicle.setStatus("TOW_APPROACHING");
                 vehicle.setTargetTowId(strandedWreck.getId());
 
-                ctx.addOrder(newTowOrder);
+                ctx.addNewOrder(newTowOrder);
+                ctx.setBroadcastOrders(true);
+                ctx.setBroadcastVehicles(true);
             } else {
                 vehicle.setStatus("AVAILABLE");
+                ctx.setBroadcastVehicles(true);
             }
         }
     }

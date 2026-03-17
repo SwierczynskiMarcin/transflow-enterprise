@@ -7,6 +7,7 @@ import com.transflow.backend.fleet.VehicleRepository;
 import com.transflow.backend.simulation.PhysicsService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -27,6 +28,8 @@ public class RescueRadarService {
     private final SimpMessagingTemplate messagingTemplate;
 
     private static final double TRUCK_SPEED_KMH = 80.0;
+    private static final int OLE_MAX_RETRIES = 5;
+    private static final long OLE_RETRY_DELAY_MS = 200;
 
     public List<RescueCandidateDTO> scanForCandidates(Long targetVehicleId) {
         Vehicle targetVehicle = vehicleRepository.findById(targetVehicleId)
@@ -160,7 +163,6 @@ public class RescueRadarService {
                     availableMsu.getCurrentLat(), availableMsu.getCurrentLng(),
                     brokenVehicle.getCurrentLat(), brokenVehicle.getCurrentLng()
             );
-
             applyTowDispatch(availableMsu.getId(), brokenVehicleId, route);
         } else {
             queueMsuJob(brokenVehicle);
@@ -278,7 +280,19 @@ public class RescueRadarService {
         }
 
         if (bestCandidate != null && bestRoute != null) {
-            applyMsuQueue(bestCandidate.msu().getId(), brokenVehicle.getId(), bestRoute);
+            applyMsuQueueWithRetry(bestCandidate.msu().getId(), brokenVehicle.getId(), bestRoute);
+        }
+    }
+
+    private void applyMsuQueueWithRetry(Long msuId, Long brokenId, RoutingService.RouteInfo route) {
+        for (int attempt = 0; attempt < OLE_MAX_RETRIES; attempt++) {
+            try {
+                applyMsuQueue(msuId, brokenId, route);
+                return;
+            } catch (ObjectOptimisticLockingFailureException e) {
+                if (attempt == OLE_MAX_RETRIES - 1) throw e;
+                try { Thread.sleep(OLE_RETRY_DELAY_MS); } catch (InterruptedException ignored) { Thread.currentThread().interrupt(); }
+            }
         }
     }
 

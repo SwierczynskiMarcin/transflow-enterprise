@@ -1,8 +1,76 @@
 import { useState, useEffect } from 'react';
-import { Settings as SettingsIcon, Database, Globe, Users, Trash2, Loader2, Rocket } from 'lucide-react';
+import { Settings as SettingsIcon, Database, Globe, Users, Trash2, Loader2, Rocket, AlertTriangle, X } from 'lucide-react';
 import { useSimulation } from '../../context/SimulationContext';
 import { seedLocations, seedFleet, autoDispatch, clearAllData } from '../../api/demoApi';
 import { useToast } from '../../context/ToastContext';
+
+const RESET_CONFIRM_WORD = 'RESET';
+
+function ResetConfirmModal({ onConfirm, onCancel }: { onConfirm: () => void; onCancel: () => void }) {
+    const [inputValue, setInputValue] = useState('');
+    const isConfirmed = inputValue === RESET_CONFIRM_WORD;
+
+    return (
+        <div
+            className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 backdrop-blur-sm"
+            onClick={(e) => { if (e.target === e.currentTarget) onCancel(); }}
+        >
+            <div className="bg-slate-900 border border-rose-900/70 rounded-2xl shadow-[0_20px_60px_rgba(0,0,0,0.7)] w-full max-w-md mx-4 overflow-hidden animate-[fadeIn_0.15s_ease-out]">
+                <div className="p-5 bg-rose-950/40 border-b border-rose-900/50 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 bg-rose-500/20 rounded-xl text-rose-400">
+                            <AlertTriangle size={20} />
+                        </div>
+                        <h2 className="text-white font-bold text-lg">Potwierdzenie resetu systemu</h2>
+                    </div>
+                    <button onClick={onCancel} className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-700 transition">
+                        <X size={18} />
+                    </button>
+                </div>
+
+                <div className="p-6 flex flex-col gap-4">
+                    <p className="text-rose-300/80 text-sm leading-relaxed">
+                        Ta operacja wywoła <span className="font-bold text-rose-300">SQL TRUNCATE CASCADE</span> i bezpowrotnie usunie wszystkie dane — pojazdy, kierowców, zlecenia, bazy oraz wyzeruje identyfikatory (ID).
+                    </p>
+                    <p className="text-rose-300/80 text-sm leading-relaxed">
+                        Operacji nie można cofnąć. Wpisz <span className="font-bold text-white bg-slate-800 px-1.5 py-0.5 rounded font-mono">{RESET_CONFIRM_WORD}</span> poniżej, aby potwierdzić.
+                    </p>
+
+                    <div>
+                        <input
+                            type="text"
+                            value={inputValue}
+                            onChange={e => setInputValue(e.target.value.toUpperCase())}
+                            placeholder={`Wpisz "${RESET_CONFIRM_WORD}"`}
+                            className="w-full bg-slate-800 border border-slate-700 rounded-lg p-3 text-white font-mono outline-none focus:border-rose-500 placeholder:text-slate-600 transition-colors"
+                            autoFocus
+                        />
+                    </div>
+
+                    <div className="flex gap-3 mt-2">
+                        <button
+                            onClick={onCancel}
+                            className="flex-1 py-2.5 rounded-xl border border-slate-700 text-slate-300 hover:bg-slate-800 transition font-bold text-sm"
+                        >
+                            Anuluj
+                        </button>
+                        <button
+                            onClick={onConfirm}
+                            disabled={!isConfirmed}
+                            className={`flex-1 py-2.5 rounded-xl font-bold text-sm transition ${
+                                isConfirmed
+                                    ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-[0_0_15px_rgba(225,29,72,0.3)]'
+                                    : 'bg-slate-800 text-slate-600 cursor-not-allowed'
+                            }`}
+                        >
+                            Wyczyść wszystko
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}
 
 export default function SettingsManager() {
     const { trucks, refreshLocations, refreshVehicles, refreshRoutes, refreshOrders } = useSimulation();
@@ -11,6 +79,7 @@ export default function SettingsManager() {
     const[loadingAction, setLoadingAction] = useState<string | null>(null);
     const [dispatchStatus, setDispatchStatus] = useState<{ active: boolean, requested: number, initialMax: number } | null>(null);
     const[actualDispatched, setActualDispatched] = useState(0);
+    const [showResetModal, setShowResetModal] = useState(false);
 
     const availableTrucksWithDrivers = Array.from(trucks.values()).filter(t => t.status === 'AVAILABLE' && t.driverName && t.driverName !== 'Brak przypisania');
     const maxDispatch = availableTrucksWithDrivers.length;
@@ -50,11 +119,7 @@ export default function SettingsManager() {
         }
     },[maxDispatch, loadingAction, dispatchStatus, actualDispatched, showToast, refreshVehicles, refreshRoutes, refreshOrders]);
 
-    const handleAction = async (actionId: string, actionFn: () => Promise<any>, successText: string) => {
-        if (actionId === 'clear' && !confirm("UWAGA! Ta operacja wywoła polecenie SQL TRUNCATE CASCADE. Bezpowrotnie usunie wszystkie dane, pojazdy, zlecenia i bazy z systemu oraz wyzeruje identyfikatory (ID). Kontynuować?")) {
-            return;
-        }
-
+    const executeAction = async (actionId: string, actionFn: () => Promise<any>, successText: string) => {
         setLoadingAction(actionId);
 
         if (actionId === 'dispatch') {
@@ -90,10 +155,31 @@ export default function SettingsManager() {
         }
     };
 
+    const handleAction = (actionId: string, actionFn: () => Promise<any>, successText: string) => {
+        if (actionId === 'clear') {
+            setShowResetModal(true);
+            return;
+        }
+        executeAction(actionId, actionFn, successText);
+    };
+
+    const handleResetConfirm = () => {
+        setShowResetModal(false);
+        executeAction('clear', clearAllData, 'System zresetowany. ID sekwencji wyzerowane.');
+    };
+
     const progressPercent = dispatchStatus ? Math.min(100, (actualDispatched / dispatchStatus.requested) * 100) : 0;
 
     return (
         <div className="p-8 h-full w-full overflow-y-auto bg-slate-900 text-slate-200">
+
+            {showResetModal && (
+                <ResetConfirmModal
+                    onConfirm={handleResetConfirm}
+                    onCancel={() => setShowResetModal(false)}
+                />
+            )}
+
             <div className="flex justify-between items-center mb-10">
                 <div>
                     <h1 className="text-3xl font-bold text-white flex items-center gap-3">

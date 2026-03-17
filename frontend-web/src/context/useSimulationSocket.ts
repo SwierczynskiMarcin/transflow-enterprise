@@ -30,6 +30,8 @@ export function useSimulationSocket({
                     const payload = JSON.parse(message.body);
                     const dtoList = Array.isArray(payload) ? payload : [payload];
 
+                    let needsImmediateVehicleRefresh = false;
+
                     setTrucks((prev) => {
                         let changed = false;
                         const newMap = new Map(prev);
@@ -37,8 +39,21 @@ export function useSimulationSocket({
                         for (const dto of dtoList) {
                             const existing = newMap.get(dto.vehicleId);
 
-                            if (existing && existing.orderStatus === dto.orderStatus && dto.progress < existing.progress - 0.001) {
-                                continue;
+                            const statusChanged = !existing || existing.status !== dto.status;
+                            const orderStatusChanged = existing?.orderStatus !== dto.orderStatus;
+                            const isNewRoute = dto.progress < 0.1 && (existing?.progress ?? 0) > 0.85;
+                            const isStaleFrame =
+                                existing &&
+                                !statusChanged &&
+                                !orderStatusChanged &&
+                                dto.progress < existing.progress - 0.001 &&
+                                !isNewRoute;
+
+                            if (isStaleFrame) continue;
+
+                            const nextTowChanged = (dto.nextTowTargetId ?? null) !== (existing?.nextTowTargetId ?? null);
+                            if (nextTowChanged) {
+                                needsImmediateVehicleRefresh = true;
                             }
 
                             const isFinished = dto.status === 'AVAILABLE';
@@ -55,7 +70,9 @@ export function useSimulationSocket({
                                 orderStatus: isFinished ? undefined : dto.orderStatus,
                                 progress: isFinished ? 0 : dto.progress,
                                 gpsDistance: dto.gpsDistance,
-                                isServiceUnit: existing?.isServiceUnit || false,
+                                isServiceUnit: dto.isServiceUnit ?? existing?.isServiceUnit ?? false,
+                                nextTowTargetId: dto.nextTowTargetId ?? null,
+                                targetTowId: dto.targetTowId ?? null,
                                 driverName: existing?.driverName || 'Brak przypisania',
                                 lastKinematicUpdate: Date.now()
                             });
@@ -64,6 +81,11 @@ export function useSimulationSocket({
 
                         return changed ? newMap : prev;
                     });
+
+                    if (needsImmediateVehicleRefresh) {
+                        clearTimeout(vehiclesTimeout);
+                        refreshVehicles();
+                    }
                 });
 
                 client.subscribe('/topic/simulation', (message) => {
@@ -102,5 +124,5 @@ export function useSimulationSocket({
             clearTimeout(ordersTimeout);
             client.deactivate();
         };
-    },[refreshVehicles, refreshLocations, refreshRoutes, refreshOrders, setTrucks, setIsPlaying, setVirtualTime]);
+    }, [refreshVehicles, refreshLocations, refreshRoutes, refreshOrders, setTrucks, setIsPlaying, setVirtualTime]);
 }

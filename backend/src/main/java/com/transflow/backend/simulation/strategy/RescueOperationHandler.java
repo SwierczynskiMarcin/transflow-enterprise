@@ -49,7 +49,20 @@ public class RescueOperationHandler implements OrderStateHandler {
 
             if (order.getProgress() >= 1.0) {
                 order.setStatus("COMPLETED");
-                Vehicle brokenVehicle = vehicleRepository.findById(vehicle.getTargetRescueId()).orElse(null);
+
+                Long rescueTargetId = vehicle.getTargetRescueId();
+
+                if (rescueTargetId == null) {
+                    rescueTargetId = resolveTargetRescueIdFromOrders(vehicle.getId());
+                }
+
+                if (rescueTargetId != null) {
+                    vehicle.setTargetRescueId(rescueTargetId);
+                }
+
+                Vehicle brokenVehicle = rescueTargetId != null
+                        ? vehicleRepository.findById(rescueTargetId).orElse(null)
+                        : null;
 
                 if (brokenVehicle != null) {
                     Order brokenCargoOrder = orderRepository.findByStatusIn(List.of("IN_TRANSIT", "LOADING", "HANDOVER"))
@@ -100,5 +113,26 @@ public class RescueOperationHandler implements OrderStateHandler {
                 order.setLoadingTicksRemaining(remaining - 1);
             }
         }
+    }
+
+    private Long resolveTargetRescueIdFromOrders(Long rescuerVehicleId) {
+        return orderRepository.findByStatusIn(List.of("RESCUE_APPROACHING"))
+                .stream()
+                .filter(o -> o.getVehicle() != null && o.getVehicle().getId().equals(rescuerVehicleId))
+                .findFirst()
+                .map(o -> {
+                    return orderRepository.findByStatusIn(List.of("IN_TRANSIT", "LOADING", "HANDOVER"))
+                            .stream()
+                            .filter(cargo -> cargo.getVehicle() != null &&
+                                    !cargo.getVehicle().getId().equals(rescuerVehicleId))
+                            .filter(cargo -> {
+                                Vehicle v = cargo.getVehicle();
+                                return "BROKEN".equals(v.getStatus()) || "WAITING_FOR_TOW".equals(v.getStatus());
+                            })
+                            .map(cargo -> cargo.getVehicle().getId())
+                            .findFirst()
+                            .orElse(null);
+                })
+                .orElse(null);
     }
 }

@@ -107,26 +107,29 @@ public class CommercialTransportHandler implements OrderStateHandler {
 
                             ctx.addOrder(brokenCargoOrder);
                             ctx.addVehicle(brokenVehicle);
+
                         } else if (brokenCargoOrder != null) {
+                            RoutingService.RouteInfo route = routingService.getRoute(
+                                    vehicle.getCurrentLat(), vehicle.getCurrentLng(),
+                                    brokenVehicle.getCurrentLat(), brokenVehicle.getCurrentLng()
+                            );
+
                             Order technicalOrder = new Order();
                             technicalOrder.setVehicle(vehicle);
                             technicalOrder.setDriver(order.getDriver());
                             technicalOrder.setStatus("RESCUE_APPROACHING");
                             technicalOrder.setStartLatApproaching(vehicle.getCurrentLat());
                             technicalOrder.setStartLngApproaching(vehicle.getCurrentLng());
-
-                            RoutingService.RouteInfo route = routingService.getRoute(
-                                    vehicle.getCurrentLat(), vehicle.getCurrentLng(),
-                                    brokenVehicle.getCurrentLat(), brokenVehicle.getCurrentLng()
-                            );
-
                             technicalOrder.setRoutePolylineApproaching(route != null ? route.polyline() : "");
                             technicalOrder.setRouteDistanceApproaching(route != null ? route.distance() : 0.0);
                             technicalOrder.setProgress(0.0);
                             technicalOrder.setGpsDistance(0.0);
 
                             vehicle.setStatus("RESCUE_MISSION");
-                            ctx.addOrder(technicalOrder);
+                            vehicle.setTargetRescueId(brokenVehicle.getId());
+
+                            ctx.addNewOrder(technicalOrder);
+
                         } else {
                             vehicle.setStatus("AVAILABLE");
                             vehicle.setTargetRescueId(null);
@@ -136,6 +139,7 @@ public class CommercialTransportHandler implements OrderStateHandler {
                         vehicle.setTargetRescueId(null);
                     }
                     ctx.setBroadcastOrders(true);
+                    ctx.setBroadcastVehicles(true);
                 } else {
                     order.setStatus("COMPLETED");
                     vehicle.setStatus("AVAILABLE");

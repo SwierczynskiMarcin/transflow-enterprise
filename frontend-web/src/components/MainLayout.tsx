@@ -8,13 +8,41 @@ interface MainLayoutProps {
     children: React.ReactNode;
 }
 
+const SPEED_PRESETS = [1, 5, 10, 30, 60, 120, 240, 360, 480, 600];
+
+function linearToLogIndex(value: number): number {
+    const clamped = Math.max(1, Math.min(600, value));
+    for (let i = SPEED_PRESETS.length - 1; i >= 0; i--) {
+        if (clamped >= SPEED_PRESETS[i]) return i;
+    }
+    return 0;
+}
+
+function logIndexToSpeed(index: number): number {
+    const i = Math.max(0, Math.min(SPEED_PRESETS.length - 1, Math.round(index)));
+    return SPEED_PRESETS[i];
+}
+
+function resolveSpeedContext(multiplier: number): string {
+    const realSecond = multiplier;
+    if (realSecond < 60) return `1 sek = ${realSecond} sek wirt.`;
+    if (realSecond < 3600) return `1 sek = ${(realSecond / 60).toFixed(realSecond % 60 === 0 ? 0 : 1)} min wirt.`;
+    return `1 sek = ${(realSecond / 3600).toFixed(1)} h wirt.`;
+}
+
 export default function MainLayout({ currentView, onNavigate, children }: MainLayoutProps) {
     const { virtualTime, isPlaying, speed, togglePlay, changeSpeed } = useSimulation();
-    const [localSpeed, setLocalSpeed] = useState(speed);
+    const [localIndex, setLocalIndex] = useState(() => linearToLogIndex(speed));
 
-    useEffect(() => { setLocalSpeed(speed); }, [speed]);
+    useEffect(() => {
+        setLocalIndex(linearToLogIndex(speed));
+    }, [speed]);
 
-    const handleSpeedCommit = () => { changeSpeed(localSpeed); };
+    const localSpeed = logIndexToSpeed(localIndex);
+
+    const handleSpeedCommit = () => {
+        changeSpeed(localSpeed);
+    };
 
     const formatDateTime = (isoString: string | null) => {
         if (!isoString) return { date: "Ładowanie...", time: "--:--" };
@@ -112,13 +140,19 @@ export default function MainLayout({ currentView, onNavigate, children }: MainLa
                                 <span className="text-xs font-bold text-cyan-400">x{localSpeed}</span>
                             </div>
                             <input
-                                type="range" min="1" max="600" step="1"
-                                value={localSpeed}
-                                onChange={(e) => setLocalSpeed(Number(e.target.value))}
+                                type="range"
+                                min="0"
+                                max={SPEED_PRESETS.length - 1}
+                                step="1"
+                                value={localIndex}
+                                onChange={(e) => setLocalIndex(Number(e.target.value))}
                                 onMouseUp={handleSpeedCommit}
                                 onTouchEnd={handleSpeedCommit}
                                 className="w-full accent-cyan-400 h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer"
                             />
+                            <span className="text-[10px] text-slate-500 text-center leading-tight">
+                                {resolveSpeedContext(localSpeed)}
+                            </span>
                         </div>
                     </div>
 

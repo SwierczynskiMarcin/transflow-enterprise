@@ -14,7 +14,9 @@ import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -50,14 +52,17 @@ public class SimulationEngine {
 
         SimulationUpdateContext ctx = new SimulationUpdateContext();
 
+        Map<Long, VehicleSimulationDTO> tickUpdatesByVehicleId = new HashMap<>();
+
         for (Order order : activeOrders) {
             Vehicle vehicle = order.getVehicle();
 
             if ("BROKEN".equals(vehicle.getStatus()) || "WAITING_FOR_TOW".equals(vehicle.getStatus()) || "BEING_TOWED".equals(vehicle.getStatus())) {
-                ctx.addTickUpdate(new VehicleSimulationDTO(
+                tickUpdatesByVehicleId.put(vehicle.getId(), new VehicleSimulationDTO(
                         vehicle.getId(), vehicle.getPlateNumber(), vehicle.getBrand(), vehicle.getModel(),
                         vehicle.getCurrentLat(), vehicle.getCurrentLng(), vehicle.getStatus(), order.getStatus(),
-                        order.getProgress(), order.getGpsDistance(), vehicle.getNextTowTargetId()
+                        order.getProgress(), order.getGpsDistance(), vehicle.getNextTowTargetId(),
+                        vehicle.getIsServiceUnit(), vehicle.getTargetTowId()
                 ));
                 continue;
             }
@@ -88,18 +93,22 @@ public class SimulationEngine {
                 ctx.addOrder(order);
             }
 
-            ctx.addTickUpdate(new VehicleSimulationDTO(
+            tickUpdatesByVehicleId.put(vehicle.getId(), new VehicleSimulationDTO(
                     vehicle.getId(), vehicle.getPlateNumber(), vehicle.getBrand(), vehicle.getModel(),
                     vehicle.getCurrentLat(), vehicle.getCurrentLng(), vehicle.getStatus(), order.getStatus(),
-                    order.getProgress(), order.getGpsDistance(), vehicle.getNextTowTargetId()
+                    order.getProgress(), order.getGpsDistance(), vehicle.getNextTowTargetId(),
+                    vehicle.getIsServiceUnit(), vehicle.getTargetTowId()
             ));
         }
+
+        boolean hadOle = false;
 
         if (!ctx.getVehiclesToSave().isEmpty()) {
             for (Vehicle v : ctx.getVehiclesToSave()) {
                 try {
                     vehicleRepository.save(v);
                 } catch (ObjectOptimisticLockingFailureException e) {
+                    hadOle = true;
                 } catch (Exception ignored) {}
             }
         }
@@ -109,14 +118,31 @@ public class SimulationEngine {
                 try {
                     orderRepository.save(o);
                 } catch (ObjectOptimisticLockingFailureException e) {
+                    hadOle = true;
                 } catch (Exception ignored) {}
             }
         }
 
-        if (ctx.isBroadcastOrders()) {
+        boolean hasNewOrders = !ctx.getNewOrdersToSave().isEmpty();
+        if (hasNewOrders) {
+            for (Order o : ctx.getNewOrdersToSave()) {
+                try {
+                    orderRepository.save(o);
+                } catch (Exception ignored) {}
+            }
+        }
+
+        for (VehicleSimulationDTO dto : tickUpdatesByVehicleId.values()) {
+            ctx.addTickUpdate(dto);
+        }
+
+        boolean shouldBroadcastOrders = ctx.isBroadcastOrders() || hasNewOrders || hadOle;
+        boolean shouldBroadcastVehicles = ctx.isBroadcastVehicles() || hasNewOrders || hadOle;
+
+        if (shouldBroadcastOrders) {
             messagingTemplate.convertAndSend("/topic/updates", "ORDERS");
         }
-        if (ctx.isBroadcastVehicles()) {
+        if (shouldBroadcastVehicles) {
             messagingTemplate.convertAndSend("/topic/updates", "VEHICLES");
         }
 

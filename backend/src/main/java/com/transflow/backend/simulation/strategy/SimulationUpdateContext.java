@@ -16,6 +16,7 @@ import java.util.Set;
 public class SimulationUpdateContext {
     private final Set<Vehicle> vehiclesToSave = new HashSet<>();
     private final Set<Order> ordersToSave = new HashSet<>();
+    private final List<Order> newOrdersToSave = new ArrayList<>();
     private final List<VehicleSimulationDTO> tickUpdates = new ArrayList<>();
     private boolean broadcastOrders = false;
     private boolean broadcastVehicles = false;
@@ -26,6 +27,10 @@ public class SimulationUpdateContext {
 
     public void addOrder(Order o) {
         ordersToSave.add(o);
+    }
+
+    public void addNewOrder(Order o) {
+        newOrdersToSave.add(o);
     }
 
     public void addTickUpdate(VehicleSimulationDTO dto) {

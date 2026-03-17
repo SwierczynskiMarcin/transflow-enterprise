@@ -4,17 +4,17 @@ import { useSimulationData } from './useSimulationData';
 import { useSimulationSocket } from './useSimulationSocket';
 import { useToast } from './ToastContext';
 
-export const decodePolyline = (str: string, precision = 5):[number, number][] => {
-    if (!str) return[];
-    let index = 0, lat = 0, lng = 0, coordinates: [number, number][] =[], shift = 0, result = 0, byte = null;
+export const decodePolyline = (str: string, precision = 5): [number, number][] => {
+    if (!str) return [];
+    let index = 0, lat = 0, lng = 0, coordinates: [number, number][] = [], shift = 0, result = 0, byte = null;
     const factor = Math.pow(10, precision);
     while (index < str.length) {
         byte = null; shift = 0; result = 0;
         do { byte = str.charCodeAt(index++) - 63; result |= (byte & 0x1f) << shift; shift += 5; } while (byte >= 0x20);
-        let latitude_change = ((result & 1) ? ~(result >> 1) : (result >> 1));
+        const latitude_change = ((result & 1) ? ~(result >> 1) : (result >> 1));
         shift = result = 0;
         do { byte = str.charCodeAt(index++) - 63; result |= (byte & 0x1f) << shift; shift += 5; } while (byte >= 0x20);
-        let longitude_change = ((result & 1) ? ~(result >> 1) : (result >> 1));
+        const longitude_change = ((result & 1) ? ~(result >> 1) : (result >> 1));
         lat += latitude_change; lng += longitude_change;
         coordinates.push([lat / factor, lng / factor]);
     }
@@ -35,6 +35,8 @@ export interface VehicleData {
     driverName?: string;
     lastKinematicUpdate?: number;
     isServiceUnit: boolean;
+    nextTowTargetId?: number | null;
+    targetTowId?: number | null;
 }
 
 export interface ActiveRoute {
@@ -95,7 +97,7 @@ export const SimulationProvider: FC<{ children: ReactNode }> = ({ children }) =>
     } = useSimulationData();
 
     const { showToast } = useToast();
-    const[isPlaying, setIsPlaying] = useState<boolean | null>(null);
+    const [isPlaying, setIsPlaying] = useState<boolean | null>(null);
     const [speed, setSpeed] = useState(60);
     const [virtualTime, setVirtualTime] = useState<string | null>(null);
     const [mapCenter, setMapCenter] = useState<[number, number]>([52.0, 19.0]);
@@ -153,7 +155,8 @@ export const SimulationProvider: FC<{ children: ReactNode }> = ({ children }) =>
         <SimulationContext.Provider value={{
             trucks, locations, activeRoutes, orders, isPlaying, speed, virtualTime,
             mapCenter, mapZoom,
-            togglePlay, changeSpeed, setMapViewState, refreshVehicles, refreshLocations, refreshRoutes, refreshOrders
+            togglePlay, changeSpeed, setMapViewState,
+            refreshVehicles, refreshLocations, refreshRoutes, refreshOrders
         }}>
             {children}
         </SimulationContext.Provider>
