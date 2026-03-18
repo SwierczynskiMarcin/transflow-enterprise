@@ -7,7 +7,7 @@ import { createOrder } from '../../../api/logisticsApi';
 import { useToast } from '../../../context/ToastContext';
 
 export default function OrderBuilder() {
-    const { trucks } = useSimulation();
+    const { trucks, refreshOrders, refreshRoutes, refreshVehicles } = useSimulation();
     const { showToast } = useToast();
     const {
         isBuilderOpen, setIsBuilderOpen,
@@ -144,6 +144,11 @@ export default function OrderBuilder() {
             });
             handleCancelOrder();
             showToast('Zlecenie zostało pomyślnie wygenerowane.', 'success');
+
+            // NAPRAWIONE: Natychmiastowe aktualizacje stanu w celu usunięcia odczucia "laga"
+            refreshOrders();
+            refreshRoutes();
+            refreshVehicles();
         } catch (error: any) {
             showToast(error.message, 'error');
         } finally {

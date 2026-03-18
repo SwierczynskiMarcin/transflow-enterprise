@@ -11,20 +11,26 @@ const createTruckIcon = (colorClass: string, glowColor: string, isSelected: bool
     const dynamicGlow = isSelected ? glowColor.replace('0.5)', '0.9)').replace('0.8)', '1)') : glowColor;
     const scaleClass = isSelected ? 'scale-125' : 'hover:scale-110';
     const brokenClass = isBroken ? 'animate-pulse' : '';
-    const towOpacity = isWaitingForTow ? 'opacity-60' : isBeingTowed ? 'opacity-30 scale-75' : 'opacity-100';
+    const towOpacity = isWaitingForTow ? 'opacity-60 animate-pulse' : isBeingTowed ? 'opacity-30 scale-75' : 'opacity-100';
+
+    const syncDelay = `-${Date.now() % 2000}ms`;
 
     const IconComponent = isServiceUnit ? Wrench : Truck;
 
     const htmlString = renderToString(
-        <div className={`
-            bg-slate-900 p-2 rounded-full border-2 ${colorClass} 
-            transition-all duration-300 ease-out cursor-pointer
-            shadow-[0_0_15px_${dynamicGlow}] ${scaleClass} ${brokenClass} ${towOpacity}
-            flex items-center justify-center group
-        `}>
+        <div
+            className={`
+                bg-slate-900 p-2 rounded-full border-2 ${colorClass} 
+                transition-all duration-300 ease-out cursor-pointer
+                shadow-[0_0_15px_${dynamicGlow}] ${scaleClass} ${brokenClass} ${towOpacity}
+                flex items-center justify-center group
+            `}
+            style={{ animationDelay: syncDelay }}
+        >
             <IconComponent size={20} className={colorClass.replace('border-', 'text-')} />
         </div>
     );
+
     return L.divIcon({
         className: 'bg-transparent border-none',
         html: htmlString,
@@ -110,7 +116,7 @@ export default function VehicleLayer() {
     } = useMapContext();
 
     const trucksOnRoad = useMemo(() => {
-        const onRoad: VehicleData[] =[];
+        const onRoad: VehicleData[] = [];
         Array.from(trucks.values()).forEach(truck => {
             let isParked = false;
             if (truck.status === 'AVAILABLE') {
@@ -130,38 +136,37 @@ export default function VehicleLayer() {
     }, [trucks, locations]);
 
     const offsets = useMemo(() => {
-        const grouped = new Map<string, VehicleData[]>();
+        const clusters: VehicleData[][] = [];
+
         trucksOnRoad.forEach(t => {
-            const key = `${t.currentLat.toFixed(4)},${t.currentLng.toFixed(4)}`;
-            if (!grouped.has(key)) grouped.set(key,[]);
-            grouped.get(key)!.push(t);
+            let added = false;
+            for (const cluster of clusters) {
+                const center = cluster[0];
+                if (calculateDistance(t.currentLat, t.currentLng, center.currentLat, center.currentLng) < 0.15) {
+                    cluster.push(t);
+                    added = true;
+                    break;
+                }
+            }
+            if (!added) {
+                clusters.push([t]);
+            }
         });
 
         const truckOffsets = new Map<number, { x: number, y: number }>();
-        grouped.forEach(group => {
+        clusters.forEach(group => {
             if (group.length > 1) {
                 group.forEach((t, index) => {
-                    let isParked = false;
-                    for (const loc of locations) {
-                        if (calculateDistance(t.currentLat, t.currentLng, loc.latitude, loc.longitude) <= 0.5) {
-                            isParked = true;
-                            break;
-                        }
-                    }
-                    if (!isParked) {
-                        const angle = (Math.PI * 2 * index) / group.length;
-                        const radius = 16;
-                        truckOffsets.set(t.id, { x: Math.cos(angle) * radius, y: Math.sin(angle) * radius });
-                    } else {
-                        truckOffsets.set(t.id, { x: 0, y: 0 });
-                    }
+                    const angle = (Math.PI * 2 * index) / group.length;
+                    const radius = 18 + (group.length > 5 ? (group.length - 5) * 2 : 0);
+                    truckOffsets.set(t.id, { x: Math.cos(angle) * radius, y: Math.sin(angle) * radius });
                 });
             } else {
                 truckOffsets.set(group[0].id, { x: 0, y: 0 });
             }
         });
         return truckOffsets;
-    }, [trucksOnRoad, locations]);
+    }, [trucksOnRoad]);
 
     return (
         <>

@@ -9,6 +9,17 @@ export function useSimulationData() {
     const [activeRoutes, setActiveRoutes] = useState<Map<number, ActiveRoute>>(new Map());
     const [orders, setOrders] = useState<OrderData[]>([]);
 
+    const updateVehicleLocally = useCallback((id: number, data: Partial<VehicleData>) => {
+        setTrucks(prev => {
+            const newMap = new Map(prev);
+            const existing = newMap.get(id);
+            if (existing) {
+                newMap.set(id, { ...existing, ...data });
+            }
+            return newMap;
+        });
+    }, []);
+
     const refreshLocations = useCallback(async () => {
         try {
             const data = await getLocations();
@@ -89,14 +100,7 @@ export function useSimulationData() {
                     const now = Date.now();
                     const recentlyUpdatedByWS = !!(existing?.lastKinematicUpdate && (now - existing.lastKinematicUpdate < 3000));
 
-                    const criticalStates = [
-                        'WAITING_FOR_TOW', 'BROKEN', 'RESCUE_MISSION', 'HANDOVER',
-                        'BEING_TOWED', 'WAITING_FOR_CARGO_CLEARANCE',
-                        'TOW_APPROACHING', 'TOWING', 'AVAILABLE'
-                    ];
-                    const forceOverride = !!(existing?.status !== v.status &&
-                        (criticalStates.includes(v.status) || criticalStates.includes(existing?.status || '')));
-
+                    const forceOverride = existing?.status !== v.status;
                     const isAvailable = v.status === 'AVAILABLE';
 
                     if (existing && recentlyUpdatedByWS && !forceOverride) {
@@ -138,6 +142,7 @@ export function useSimulationData() {
     return {
         trucks, setTrucks,
         locations, activeRoutes, orders,
-        refreshLocations, refreshRoutes, refreshOrders, refreshVehicles
+        refreshLocations, refreshRoutes, refreshOrders, refreshVehicles,
+        updateVehicleLocally
     };
 }

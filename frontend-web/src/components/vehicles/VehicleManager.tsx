@@ -11,7 +11,7 @@ const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
     BUSY:                        { label: 'W trasie',          className: 'bg-cyan-500/15 text-cyan-400 border-cyan-500/30' },
     BROKEN:                      { label: 'Awaria',            className: 'bg-rose-500/15 text-rose-400 border-rose-500/30 animate-pulse' },
     WAITING_FOR_TOW:             { label: 'Czeka na MSU',      className: 'bg-slate-500/15 text-slate-400 border-slate-500/30 animate-pulse' },
-    BEING_TOWED:                 { label: 'Holowany',          className: 'bg-slate-500/15 text-slate-500 border-slate-600/30' },
+    BEING_TOWED:                 { label: 'W holowaniu',       className: 'bg-slate-500/15 text-slate-500 border-slate-600/30' },
     TOW_APPROACHING:             { label: 'MSU Dojazd',        className: 'bg-orange-500/15 text-orange-400 border-orange-500/30' },
     TOWING:                      { label: 'MSU Holuje',        className: 'bg-orange-500/15 text-orange-500 border-orange-500/30' },
     WAITING_FOR_CARGO_CLEARANCE: { label: 'Przygot.',          className: 'bg-sky-500/15 text-sky-400 border-sky-500/30 animate-pulse' },
@@ -19,10 +19,33 @@ const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
     HANDOVER:                    { label: 'Przeładunek',       className: 'bg-fuchsia-500/15 text-fuchsia-400 border-fuchsia-500/30' },
 };
 
+const PRIORITY: Record<string, number> = {
+    'WAITING_FOR_CARGO_CLEARANCE': 1,
+    'TOW_APPROACHING': 2,
+    'TOWING': 3,
+    'HANDOVER': 4,
+    'RESCUE_APPROACHING': 5,
+    'RESCUE_MISSION': 6,
+    'BROKEN': 7,
+    'IN_TRANSIT': 8,
+    'LOADING': 9,
+    'BUSY': 10,
+    'APPROACHING': 11,
+    'AVAILABLE': 12,
+    'WAITING_FOR_TOW': 13,
+    'BEING_TOWED': 14
+};
+
 function LiveStatusBadge({ vehicleId }: { vehicleId: number }) {
     const { trucks } = useSimulation();
     const live = trucks.get(vehicleId);
-    const status = live?.status ?? 'AVAILABLE';
+    let status = live?.status ?? 'AVAILABLE';
+
+    if (status === 'WAITING_FOR_TOW') {
+        const isTowed = Array.from(trucks.values()).some(t => t.isServiceUnit && t.status === 'TOWING' && t.targetTowId === vehicleId);
+        if (isTowed) status = 'BEING_TOWED';
+    }
+
     const config = STATUS_CONFIG[status] ?? { label: status, className: 'bg-slate-500/15 text-slate-400 border-slate-500/30' };
 
     return (
@@ -68,16 +91,32 @@ export default function VehicleManager() {
 
     const sortedVehicles = useMemo(() => {
         return [...vehiclesData].sort((a, b) => {
+            if (a.isServiceUnit && !b.isServiceUnit) return -1;
+            if (!a.isServiceUnit && b.isServiceUnit) return 1;
+
             const liveA = trucks.get(a.id);
             const liveB = trucks.get(b.id);
-            const statusA = liveA ? liveA.status : a.status;
-            const statusB = liveB ? liveB.status : b.status;
 
-            if (statusA === 'BROKEN' && statusB !== 'BROKEN') return -1;
-            if (statusA !== 'BROKEN' && statusB === 'BROKEN') return 1;
+            let effStatusA = liveA ? liveA.status : a.status;
+            if (effStatusA === 'WAITING_FOR_TOW') {
+                const isTowed = Array.from(trucks.values()).some(t => t.isServiceUnit && t.status === 'TOWING' && t.targetTowId === a.id);
+                if (isTowed) effStatusA = 'BEING_TOWED';
+            } else if (effStatusA === 'BUSY' && liveA?.orderStatus) {
+                effStatusA = liveA.orderStatus;
+            }
 
-            if (statusA === 'BUSY' && statusB !== 'BUSY') return -1;
-            if (statusA !== 'BUSY' && statusB === 'BUSY') return 1;
+            let effStatusB = liveB ? liveB.status : b.status;
+            if (effStatusB === 'WAITING_FOR_TOW') {
+                const isTowed = Array.from(trucks.values()).some(t => t.isServiceUnit && t.status === 'TOWING' && t.targetTowId === b.id);
+                if (isTowed) effStatusB = 'BEING_TOWED';
+            } else if (effStatusB === 'BUSY' && liveB?.orderStatus) {
+                effStatusB = liveB.orderStatus;
+            }
+
+            const prioA = PRIORITY[effStatusA] || 99;
+            const prioB = PRIORITY[effStatusB] || 99;
+
+            if (prioA !== prioB) return prioA - prioB;
 
             return a.plateNumber.localeCompare(b.plateNumber);
         });
@@ -158,59 +197,65 @@ export default function VehicleManager() {
         const liveTruck = trucks.get(vehicleId);
         if (!liveTruck) return <span className="text-slate-500 italic">Ładowanie...</span>;
 
-        if (liveTruck.status === 'BROKEN') {
+        let effStatus = liveTruck.status;
+        if (effStatus === 'WAITING_FOR_TOW') {
+            const isTowed = Array.from(trucks.values()).some(t => t.isServiceUnit && t.status === 'TOWING' && t.targetTowId === vehicleId);
+            if (isTowed) effStatus = 'BEING_TOWED';
+        }
+
+        if (effStatus === 'BROKEN') {
             return (
                 <span className="flex items-center gap-1 text-rose-400 font-bold animate-pulse">
                     <AlertTriangle size={14} /> AWARIA NA TRASIE
                 </span>
             );
         }
-        if (liveTruck.status === 'WAITING_FOR_TOW') {
+        if (effStatus === 'WAITING_FOR_TOW') {
             return (
                 <span className="flex items-center gap-1 text-slate-400 font-bold border border-slate-600 px-2 py-0.5 rounded text-xs">
                     WRAK (OCZEKUJE NA MSU)
                 </span>
             );
         }
-        if (liveTruck.status === 'BEING_TOWED') {
-            return <span className="flex items-center gap-1 text-slate-500 font-bold">HOLOWANY DO BAZY</span>;
+        if (effStatus === 'BEING_TOWED') {
+            return <span className="flex items-center gap-1 text-slate-500 font-bold border border-slate-600 px-2 py-0.5 rounded text-xs">W TRAKCIE HOLOWANIA</span>;
         }
-        if (liveTruck.status === 'WAITING_FOR_CARGO_CLEARANCE') {
+        if (effStatus === 'WAITING_FOR_CARGO_CLEARANCE') {
             return (
                 <span className="flex items-center gap-1 text-sky-400 font-bold animate-pulse">
                     <Wrench size={14} /> PRZYGOTOWANIE DO HOLOWANIA
                 </span>
             );
         }
-        if (liveTruck.status === 'HANDOVER') {
+        if (effStatus === 'HANDOVER') {
             return (
                 <span className="flex items-center gap-1 text-fuchsia-400 font-bold animate-pulse">
                     POSTÓJ OPERACYJNY NA TRASIE
                 </span>
             );
         }
-        if (liveTruck.status === 'RESCUE_MISSION') {
+        if (effStatus === 'RESCUE_MISSION') {
             return (
                 <span className="flex items-center gap-1 text-indigo-400 font-bold">
                     <Truck size={14} /> W DRODZE PO ŁADUNEK Z WRAKA
                 </span>
             );
         }
-        if (liveTruck.status === 'TOW_APPROACHING') {
+        if (effStatus === 'TOW_APPROACHING') {
             return (
                 <span className="flex items-center gap-1 text-orange-400 font-bold">
                     <Wrench size={14} /> MSU ZMIERZA DO WRAKA
                 </span>
             );
         }
-        if (liveTruck.status === 'TOWING') {
+        if (effStatus === 'TOWING') {
             return (
                 <span className="flex items-center gap-1 text-orange-500 font-bold">
                     <Wrench size={14} /> MSU HOLUJE WRAK
                 </span>
             );
         }
-        if (liveTruck.status === 'BUSY') {
+        if (effStatus === 'BUSY') {
             const activeOrder = orders.find(
                 o => o.vehicle && o.vehicle.id === vehicleId && ['APPROACHING', 'LOADING', 'IN_TRANSIT'].includes(o.status)
             );
@@ -417,6 +462,12 @@ export default function VehicleManager() {
                     <tbody>
                     {sortedVehicles.map(v => {
                         const liveData = trucks.get(v.id);
+                        let effStatus = liveData?.status;
+                        if (effStatus === 'WAITING_FOR_TOW') {
+                            const isTowed = Array.from(trucks.values()).some(t => t.isServiceUnit && t.status === 'TOWING' && t.targetTowId === v.id);
+                            if (isTowed) effStatus = 'BEING_TOWED';
+                        }
+
                         return (
                             <tr key={v.id} className="hover:bg-slate-700/50 border-b border-slate-700/50 transition-colors duration-300">
                                 <td className="p-4 font-bold text-white">
@@ -432,7 +483,7 @@ export default function VehicleManager() {
                                     <LiveStatusBadge vehicleId={v.id} />
                                 </td>
                                 <td className="p-4">
-                                    {liveData && liveData.status !== 'WAITING_FOR_TOW' && liveData.status !== 'BEING_TOWED' && liveData.driverName && liveData.driverName !== 'Brak przypisania' ? (
+                                    {liveData && effStatus !== 'WAITING_FOR_TOW' && effStatus !== 'BEING_TOWED' && liveData.driverName && liveData.driverName !== 'Brak przypisania' ? (
                                         <span className="flex items-center gap-2 text-slate-300">
                                             <User size={14} className="text-slate-500" />
                                             {liveData.driverName}

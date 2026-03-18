@@ -1,71 +1,109 @@
 import { useState } from 'react';
 import { Activity, ChevronRight, Wrench, Clock } from 'lucide-react';
-import { useSimulation, type VehicleData } from '../../../context/SimulationContext';
+import { useSimulation, type VehicleData, type OrderData } from '../../../context/SimulationContext';
 import { useMapContext } from '../MapContext';
 
 const INDETERMINATE_STATUSES = new Set([
     'LOADING', 'HANDOVER', 'WAITING_FOR_CARGO_CLEARANCE', 'WAITING_FOR_TOW', 'BEING_TOWED'
 ]);
 
+const PRIORITY: Record<string, number> = {
+    'WAITING_FOR_CARGO_CLEARANCE': 1,
+    'TOW_APPROACHING': 2,
+    'TOWING': 3,
+    'HANDOVER': 4,
+    'RESCUE_APPROACHING': 5,
+    'RESCUE_MISSION': 6,
+    'BROKEN': 7,
+    'IN_TRANSIT': 8,
+    'LOADING': 9,
+    'BUSY': 10,
+    'APPROACHING': 11,
+    'WAITING_FOR_TOW': 12,
+    'BEING_TOWED': 13
+};
+
+function getEffectiveStatus(truck: VehicleData, trucks: Map<number, VehicleData>): string {
+    if (truck.status === 'WAITING_FOR_TOW') {
+        const isTowed = Array.from(trucks.values()).some(t => t.isServiceUnit && t.status === 'TOWING' && t.targetTowId === truck.id);
+        if (isTowed) return 'BEING_TOWED';
+    }
+    return truck.status;
+}
+
 const isMsuActiveOperation = (status: string) =>
     status === 'TOW_APPROACHING' || status === 'TOWING' || status === 'WAITING_FOR_CARGO_CLEARANCE';
 
-function resolveStatusLabel(truck: VehicleData): string {
-    if (truck.status === 'BROKEN') return 'AWARIA POJAZDU';
-    if (truck.status === 'WAITING_FOR_TOW') return 'OCZEKUJE NA MSU';
-    if (truck.status === 'BEING_TOWED') return 'HOLOWANY DO BAZY';
-    if (truck.status === 'TOW_APPROACHING') return 'MSU Dojazd do wraku';
-    if (truck.status === 'TOWING') return 'MSU Holowanie';
-    if (truck.status === 'WAITING_FOR_CARGO_CLEARANCE') return 'Przygotowanie do holowania';
-    if (truck.status === 'RESCUE_MISSION' || truck.orderStatus === 'RESCUE_APPROACHING') return 'Misja Ratunkowa';
-    if (truck.status === 'HANDOVER') return 'Przeładunek Techniczny';
-    if (truck.orderStatus === 'APPROACHING') return 'Dojazd do punktu A';
+function resolveStatusLabel(truck: VehicleData, effStatus: string, orders: OrderData[]): string {
+    if (effStatus === 'BROKEN') return 'AWARIA POJAZDU';
+    if (effStatus === 'WAITING_FOR_TOW') return 'OCZEKUJE NA MSU';
+    if (effStatus === 'BEING_TOWED') return 'W TRAKCIE HOLOWANIA';
+    if (effStatus === 'TOW_APPROACHING') return 'MSU Dojazd do wraku';
+    if (effStatus === 'TOWING') return 'MSU Holowanie';
+    if (effStatus === 'WAITING_FOR_CARGO_CLEARANCE') return 'Przygotowanie do holowania';
+    if (effStatus === 'RESCUE_MISSION' || truck.orderStatus === 'RESCUE_APPROACHING') return 'Misja Ratunkowa';
+    if (effStatus === 'HANDOVER') return 'Przeładunek Techniczny';
+
+    const order = orders.find(o => o.vehicle?.id === truck.id && ['APPROACHING', 'LOADING', 'IN_TRANSIT'].includes(o.status));
+
+    if (truck.orderStatus === 'APPROACHING') return order ? `Dojazd: ${order.startLocation.name}` : 'Dojazd do załadunku';
     if (truck.orderStatus === 'LOADING') return 'Załadunek towaru';
-    return 'W trasie do B';
+    return order ? `W trasie: ${order.endLocation.name}` : 'W trasie do celu';
 }
 
-function resolveAccentColor(truck: VehicleData): string {
-    if (truck.status === 'BROKEN') return 'text-rose-400 animate-pulse';
-    if (truck.status === 'WAITING_FOR_TOW') return 'text-slate-400 animate-pulse';
-    if (truck.status === 'BEING_TOWED') return 'text-slate-500';
-    if (truck.status === 'TOW_APPROACHING') return 'text-orange-400';
-    if (truck.status === 'TOWING') return 'text-orange-500';
-    if (truck.status === 'WAITING_FOR_CARGO_CLEARANCE') return 'text-sky-400 animate-pulse';
-    if (truck.status === 'RESCUE_MISSION' || truck.orderStatus === 'RESCUE_APPROACHING') return 'text-indigo-400';
-    if (truck.status === 'HANDOVER') return 'text-fuchsia-400';
+function resolveAccentColor(truck: VehicleData, effStatus: string): string {
+    if (effStatus === 'BROKEN') return 'text-rose-400 animate-pulse';
+    if (effStatus === 'WAITING_FOR_TOW') return 'text-slate-400 animate-pulse';
+    if (effStatus === 'BEING_TOWED') return 'text-slate-500';
+    if (effStatus === 'TOW_APPROACHING') return 'text-orange-400';
+    if (effStatus === 'TOWING') return 'text-orange-500';
+    if (effStatus === 'WAITING_FOR_CARGO_CLEARANCE') return 'text-sky-400 animate-pulse';
+    if (effStatus === 'RESCUE_MISSION' || truck.orderStatus === 'RESCUE_APPROACHING') return 'text-indigo-400';
+    if (effStatus === 'HANDOVER') return 'text-fuchsia-400';
     if (truck.orderStatus === 'APPROACHING') return 'text-amber-400';
     if (truck.orderStatus === 'LOADING') return 'text-blue-400';
     return 'text-cyan-400';
 }
 
-function resolveBarColor(truck: VehicleData): string {
-    if (truck.status === 'BROKEN') return 'bg-rose-500';
-    if (truck.status === 'WAITING_FOR_TOW' || truck.status === 'BEING_TOWED') return 'bg-slate-500';
-    if (truck.status === 'TOW_APPROACHING' || truck.status === 'TOWING') return 'bg-orange-500';
-    if (truck.status === 'WAITING_FOR_CARGO_CLEARANCE') return 'bg-sky-400';
-    if (truck.status === 'RESCUE_MISSION' || truck.orderStatus === 'RESCUE_APPROACHING') return 'bg-indigo-500';
-    if (truck.status === 'HANDOVER') return 'bg-fuchsia-500';
+function resolveBarColor(truck: VehicleData, effStatus: string): string {
+    if (effStatus === 'BROKEN') return 'bg-rose-500';
+    if (effStatus === 'WAITING_FOR_TOW' || effStatus === 'BEING_TOWED') return 'bg-slate-500';
+    if (effStatus === 'TOW_APPROACHING' || effStatus === 'TOWING') return 'bg-orange-500';
+    if (effStatus === 'WAITING_FOR_CARGO_CLEARANCE') return 'bg-sky-400';
+    if (effStatus === 'RESCUE_MISSION' || truck.orderStatus === 'RESCUE_APPROACHING') return 'bg-indigo-500';
+    if (effStatus === 'HANDOVER') return 'bg-fuchsia-500';
     if (truck.orderStatus === 'APPROACHING') return 'bg-amber-400';
     if (truck.orderStatus === 'LOADING') return 'bg-blue-400';
     return 'bg-cyan-400';
 }
 
-function resolveBorderClass(truck: VehicleData, isSelected: boolean): string {
+function resolveBorderClass(_truck: VehicleData, effStatus: string, isSelected: boolean): string {
     if (isSelected) return 'border-cyan-500 shadow-[0_0_15px_rgba(34,211,238,0.2)]';
-    if (truck.status === 'BROKEN') return 'border-rose-500/50 hover:border-rose-500';
-    if (truck.status === 'WAITING_FOR_TOW' || truck.status === 'BEING_TOWED') return 'border-slate-500/50 hover:border-slate-400';
-    if (truck.status === 'TOW_APPROACHING' || truck.status === 'TOWING') return 'border-orange-500/50 hover:border-orange-500';
-    if (truck.status === 'WAITING_FOR_CARGO_CLEARANCE') return 'border-sky-500/50 hover:border-sky-500';
-    if (truck.status === 'RESCUE_MISSION' || truck.status === 'HANDOVER') return 'border-indigo-500/50 hover:border-indigo-500';
+    if (effStatus === 'BROKEN') return 'border-rose-500/50 hover:border-rose-500';
+    if (effStatus === 'WAITING_FOR_TOW' || effStatus === 'BEING_TOWED') return 'border-slate-500/50 hover:border-slate-400';
+    if (effStatus === 'TOW_APPROACHING' || effStatus === 'TOWING') return 'border-orange-500/50 hover:border-orange-500';
+    if (effStatus === 'WAITING_FOR_CARGO_CLEARANCE') return 'border-sky-500/50 hover:border-sky-500';
+    if (effStatus === 'RESCUE_MISSION' || effStatus === 'HANDOVER') return 'border-indigo-500/50 hover:border-indigo-500';
     return 'border-slate-700/50 hover:border-slate-500';
 }
 
 export default function ActiveOrdersPanel() {
-    const { trucks } = useSimulation();
+    const { trucks, orders } = useSimulation();
     const { selectedRouteVehicleId, setSelectedRouteVehicleId } = useMapContext();
     const [isCollapsed, setIsCollapsed] = useState(false);
 
-    const activeTrucks = Array.from(trucks.values()).filter(t => t.status !== 'AVAILABLE');
+    const activeTrucks = Array.from(trucks.values())
+        .filter(t => t.status !== 'AVAILABLE')
+        .sort((a, b) => {
+            const effStatusA = getEffectiveStatus(a, trucks);
+            const effStatusB = getEffectiveStatus(b, trucks);
+            const statusA = effStatusA === 'BUSY' && a.orderStatus ? a.orderStatus : effStatusA;
+            const statusB = effStatusB === 'BUSY' && b.orderStatus ? b.orderStatus : effStatusB;
+            const prioA = PRIORITY[statusA] || 99;
+            const prioB = PRIORITY[statusB] || 99;
+            if (prioA !== prioB) return prioA - prioB;
+            return a.id - b.id;
+        });
 
     const resolvePlateById = (id: number | null | undefined): string => {
         if (!id) return '—';
@@ -117,19 +155,22 @@ export default function ActiveOrdersPanel() {
                 ) : (
                     <div className="space-y-4">
                         {activeTrucks.map(truck => {
+                            const effStatus = getEffectiveStatus(truck, trucks);
                             const isIndeterminate =
-                                INDETERMINATE_STATUSES.has(truck.status) ||
+                                INDETERMINATE_STATUSES.has(effStatus) ||
                                 INDETERMINATE_STATUSES.has(truck.orderStatus ?? '');
 
-                            const accentColor = resolveAccentColor(truck);
-                            const barColor = resolveBarColor(truck);
-                            const showMsuInfo = truck.isServiceUnit && isMsuActiveOperation(truck.status);
+                            const accentColor = resolveAccentColor(truck, effStatus);
+                            const barColor = resolveBarColor(truck, effStatus);
+                            const showMsuInfo = truck.isServiceUnit && isMsuActiveOperation(effStatus);
                             const hasQueuedMission = truck.isServiceUnit && !!truck.nextTowTargetId;
+
+                            const syncDelay = `-${Date.now() % 2000}ms`;
 
                             return (
                                 <div
                                     key={truck.id}
-                                    className={`bg-slate-800/80 rounded-xl p-3 border transition-colors cursor-pointer ${resolveBorderClass(truck, truck.id === selectedRouteVehicleId)}`}
+                                    className={`bg-slate-800/80 rounded-xl p-3 border transition-colors cursor-pointer ${resolveBorderClass(truck, effStatus, truck.id === selectedRouteVehicleId)}`}
                                     onClick={() => setSelectedRouteVehicleId(truck.id)}
                                 >
                                     <div className="flex justify-between items-start mb-2">
@@ -140,8 +181,11 @@ export default function ActiveOrdersPanel() {
                                                     <span className="text-[8px] bg-orange-500 text-white px-1 rounded uppercase">MSU</span>
                                                 )}
                                             </span>
-                                            <span className={`text-[10px] font-bold uppercase tracking-wider ${accentColor}`}>
-                                                {resolveStatusLabel(truck)}
+                                            <span
+                                                className={`text-[10px] font-bold uppercase tracking-wider ${accentColor} line-clamp-1 break-all`}
+                                                style={{ animationDelay: syncDelay }}
+                                            >
+                                                {resolveStatusLabel(truck, effStatus, orders)}
                                             </span>
                                         </div>
 

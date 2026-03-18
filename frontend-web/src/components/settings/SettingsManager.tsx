@@ -81,7 +81,7 @@ export default function SettingsManager() {
     const[actualDispatched, setActualDispatched] = useState(0);
     const [showResetModal, setShowResetModal] = useState(false);
 
-    const availableTrucksWithDrivers = Array.from(trucks.values()).filter(t => t.status === 'AVAILABLE' && t.driverName && t.driverName !== 'Brak przypisania');
+    const availableTrucksWithDrivers = Array.from(trucks.values()).filter(t => t.status === 'AVAILABLE' && !t.isServiceUnit && t.driverName && t.driverName !== 'Brak przypisania');
     const maxDispatch = availableTrucksWithDrivers.length;
 
     const [dispatchCount, setDispatchCount] = useState(1);

@@ -58,7 +58,7 @@ const RouteGroup = ({ vehicleId, isHover }: { vehicleId: number; isHover: boolea
         <Fragment>
             {showTransitLine && (
                 <Polyline
-                    key={`poly2-${vehicleId}-${routeOrderStatus}`}
+                    key={`poly2-${vehicleId}-${routeOrderStatus}-${activeTruck.status}`}
                     positions={poly2}
                     color={isBrokenState ? '#ef4444' : (activeTruck.status === 'TOWING' ? '#f97316' : '#3b82f6')}
                     weight={isBrokenState ? 5 : 6}
@@ -68,7 +68,7 @@ const RouteGroup = ({ vehicleId, isHover }: { vehicleId: number; isHover: boolea
             )}
             {showApproachingLine && (
                 <Polyline
-                    key={`poly1-approaching-${vehicleId}-${routeOrderStatus}`}
+                    key={`poly1-approaching-${vehicleId}-${routeOrderStatus}-${activeTruck.status}`}
                     positions={poly1}
                     color={isBrokenState ? '#ef4444' : '#fbbf24'}
                     weight={5}
@@ -78,7 +78,7 @@ const RouteGroup = ({ vehicleId, isHover }: { vehicleId: number; isHover: boolea
             )}
             {showRescueLine && (
                 <Polyline
-                    key={`poly1-rescue-${vehicleId}-${routeOrderStatus}`}
+                    key={`poly1-rescue-${vehicleId}-${routeOrderStatus}-${activeTruck.status}`}
                     positions={poly1}
                     color={isBrokenState ? '#ef4444' : '#8b5cf6'}
                     weight={5}
@@ -88,7 +88,7 @@ const RouteGroup = ({ vehicleId, isHover }: { vehicleId: number; isHover: boolea
             )}
             {showTowLine && (
                 <Polyline
-                    key={`poly1-tow-${vehicleId}-${routeOrderStatus}`}
+                    key={`poly1-tow-${vehicleId}-${routeOrderStatus}-${activeTruck.status}`}
                     positions={poly1}
                     color={isBrokenState ? '#ef4444' : '#f97316'}
                     weight={5}

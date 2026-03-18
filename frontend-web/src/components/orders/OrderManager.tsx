@@ -20,7 +20,8 @@ export default function OrderManager() {
                         computedStatus = 'BROKEN';
                         computedProgress = liveTruck.progress !== undefined ? liveTruck.progress : order.progress;
                     } else if (liveTruck.status === 'WAITING_FOR_TOW') {
-                        computedStatus = 'WAITING_FOR_TOW';
+                        const isTowed = Array.from(trucks.values()).some(t => t.isServiceUnit && t.status === 'TOWING' && t.targetTowId === liveTruck.id);
+                        computedStatus = isTowed ? 'BEING_TOWED' : 'WAITING_FOR_TOW';
                         computedProgress = liveTruck.progress !== undefined ? liveTruck.progress : order.progress;
                     } else if (liveTruck.status === 'BEING_TOWED') {
                         computedStatus = 'BEING_TOWED';
@@ -47,7 +48,7 @@ export default function OrderManager() {
     const getStatusBadge = (status: string, progress: number) => {
         if (status === 'BROKEN') return <span className="bg-rose-500/20 text-rose-400 px-3 py-1 rounded-full text-xs font-bold uppercase animate-pulse">Awaria na trasie ({Math.round(progress * 100)}%)</span>;
         if (status === 'WAITING_FOR_TOW') return <span className="bg-slate-500/20 text-slate-400 px-3 py-1 rounded-full text-xs font-bold uppercase border border-slate-500/50">Wrak czeka na MSU</span>;
-        if (status === 'BEING_TOWED') return <span className="bg-slate-500/20 text-slate-400 px-3 py-1 rounded-full text-xs font-bold uppercase border border-slate-500/50">Zlecenie anulowane / usunięte z trasy</span>;
+        if (status === 'BEING_TOWED') return <span className="bg-slate-500/20 text-slate-400 px-3 py-1 rounded-full text-xs font-bold uppercase border border-slate-500/50">W trakcie holowania ({Math.round(progress * 100)}%)</span>;
         if (status === 'APPROACHING') return <span className="bg-amber-500/20 text-amber-400 px-3 py-1 rounded-full text-xs font-bold uppercase">Dojazd ({Math.round(progress * 100)}%)</span>;
         if (status === 'LOADING') return <span className="bg-blue-500/20 text-blue-400 px-3 py-1 rounded-full text-xs font-bold uppercase animate-pulse">Załadunek...</span>;
         if (status === 'IN_TRANSIT') return <span className="bg-cyan-500/20 text-cyan-400 px-3 py-1 rounded-full text-xs font-bold uppercase">W Trasie ({Math.round(progress * 100)}%)</span>;

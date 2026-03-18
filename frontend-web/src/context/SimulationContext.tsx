@@ -85,6 +85,7 @@ interface SimulationContextProps {
     refreshLocations: () => Promise<void>;
     refreshRoutes: () => Promise<void>;
     refreshOrders: () => Promise<void>;
+    updateVehicleLocally: (id: number, data: Partial<VehicleData>) => void;
 }
 
 const SimulationContext = createContext<SimulationContextProps | undefined>(undefined);
@@ -93,7 +94,8 @@ export const SimulationProvider: FC<{ children: ReactNode }> = ({ children }) =>
     const {
         trucks, setTrucks,
         locations, activeRoutes, orders,
-        refreshLocations, refreshRoutes, refreshOrders, refreshVehicles
+        refreshLocations, refreshRoutes, refreshOrders, refreshVehicles,
+        updateVehicleLocally
     } = useSimulationData();
 
     const { showToast } = useToast();
@@ -120,7 +122,7 @@ export const SimulationProvider: FC<{ children: ReactNode }> = ({ children }) =>
 
     useSimulationSocket({
         setTrucks,
-        setIsPlaying: (val) => setIsPlaying(val),
+        setIsPlaying,
         setVirtualTime,
         refreshLocations,
         refreshVehicles,
@@ -156,7 +158,8 @@ export const SimulationProvider: FC<{ children: ReactNode }> = ({ children }) =>
             trucks, locations, activeRoutes, orders, isPlaying, speed, virtualTime,
             mapCenter, mapZoom,
             togglePlay, changeSpeed, setMapViewState,
-            refreshVehicles, refreshLocations, refreshRoutes, refreshOrders
+            refreshVehicles, refreshLocations, refreshRoutes, refreshOrders,
+            updateVehicleLocally
         }}>
             {children}
         </SimulationContext.Provider>

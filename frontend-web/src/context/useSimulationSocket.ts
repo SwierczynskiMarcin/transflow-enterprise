@@ -39,9 +39,28 @@ export function useSimulationSocket({
                         for (const dto of dtoList) {
                             const existing = newMap.get(dto.vehicleId);
 
-                            const statusChanged = !existing || existing.status !== dto.status;
-                            const orderStatusChanged = existing?.orderStatus !== dto.orderStatus;
+                            let finalStatus = dto.status;
+                            let finalOrderStatus = dto.orderStatus;
+
+                            if (existing) {
+                                const isCurrentlyBroken = ['BROKEN', 'WAITING_FOR_TOW', 'BEING_TOWED'].includes(existing.status);
+                                const isIncomingStale = ['BUSY', 'IN_TRANSIT', 'RESCUE_MISSION', 'HANDOVER', 'TOW_APPROACHING', 'TOWING', 'WAITING_FOR_CARGO_CLEARANCE'].includes(dto.status);
+
+                                if (isCurrentlyBroken && isIncomingStale) {
+                                    finalStatus = existing.status;
+                                    finalOrderStatus = existing.orderStatus;
+                                }
+
+                                if (existing.status === 'WAITING_FOR_TOW' && dto.status === 'BROKEN') {
+                                    finalStatus = existing.status;
+                                    finalOrderStatus = existing.orderStatus;
+                                }
+                            }
+
+                            const statusChanged = !existing || existing.status !== finalStatus;
+                            const orderStatusChanged = existing?.orderStatus !== finalOrderStatus;
                             const isNewRoute = dto.progress < 0.1 && (existing?.progress ?? 0) > 0.85;
+
                             const isStaleFrame =
                                 existing &&
                                 !statusChanged &&
@@ -56,7 +75,7 @@ export function useSimulationSocket({
                                 needsImmediateVehicleRefresh = true;
                             }
 
-                            const isFinished = dto.status === 'AVAILABLE';
+                            const isFinished = finalStatus === 'AVAILABLE';
 
                             newMap.set(dto.vehicleId, {
                                 ...existing,
@@ -66,8 +85,8 @@ export function useSimulationSocket({
                                 model: dto.model,
                                 currentLat: dto.currentLat,
                                 currentLng: dto.currentLng,
-                                status: dto.status,
-                                orderStatus: isFinished ? undefined : dto.orderStatus,
+                                status: finalStatus,
+                                orderStatus: isFinished ? undefined : finalOrderStatus,
                                 progress: isFinished ? 0 : dto.progress,
                                 gpsDistance: dto.gpsDistance,
                                 isServiceUnit: dto.isServiceUnit ?? existing?.isServiceUnit ?? false,

@@ -28,6 +28,9 @@ const MapInner = () => {
             <MapContainer
                 center={mapCenter}
                 zoom={mapZoom}
+                minZoom={3}
+                maxBounds={[[-90, -180], [90, 180]]}
+                maxBoundsViscosity={1.0}
                 preferCanvas={true}
                 style={{ height: '100%', width: '100%', position: 'absolute', inset: 0 }}
                 className="z-0 bg-slate-900"
@@ -37,6 +40,7 @@ const MapInner = () => {
                 <TileLayer
                     url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
                     attribution='&copy; <a href="https://carto.com/">CARTO</a>'
+                    noWrap={true}
                 />
                 <RouteLayer />
                 <LocationLayer />

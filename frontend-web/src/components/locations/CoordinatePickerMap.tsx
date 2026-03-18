@@ -38,9 +38,15 @@ export default function CoordinatePickerMap({ initialLat, initialLng, onSave, on
                 <MapContainer
                     center={[initialLat, initialLng]}
                     zoom={6}
+                    minZoom={3}
+                    maxBounds={[[-90, -180], [90, 180]]}
+                    maxBoundsViscosity={1.0}
                     style={{ height: '100%', width: '100%' }}
                 >
-                    <TileLayer url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png" />
+                    <TileLayer
+                        url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+                        noWrap={true}
+                    />
                     <MapClickHandler onLocationSelected={(lat, lng) => setSelectedLatLng([lat, lng])} />
 
                     {selectedLatLng && (
