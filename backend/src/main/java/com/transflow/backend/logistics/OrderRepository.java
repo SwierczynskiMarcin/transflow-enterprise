@@ -11,4 +11,7 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     List<Order> findByDriverId(Long driverId);
     List<Order> findByStatusIn(List<String> statuses);
     boolean existsByStartLocationIdOrEndLocationId(Long startLocationId, Long endLocationId);
+    List<Order> findByRpaEmailSentAndStartLocationIsNotNull(Boolean rpaEmailSent);
+    List<Order> findByStatusAndRpaEmailSentAndRpaPaymentInfoReceivedAndStartLocationIsNotNull(String status, Boolean rpaEmailSent, Boolean rpaPaymentInfoReceived);
+    List<Order> findByStatusAndRpaPaymentInfoReceivedAndRpaAuditStatusAndStartLocationIsNotNull(String status, Boolean rpaPaymentInfoReceived, String rpaAuditStatus);
 }

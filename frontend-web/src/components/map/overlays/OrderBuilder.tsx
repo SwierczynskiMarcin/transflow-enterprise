@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { X, Route as RouteIcon, MapPin, Flag, AlertTriangle, Loader2, RefreshCw } from 'lucide-react';
 import { useSimulation, decodePolyline } from '../../../context/SimulationContext';
 import { useMapContext } from '../MapContext';
@@ -26,7 +26,18 @@ export default function OrderBuilder() {
     const [routeFetchError, setRouteFetchError] = useState(false);
     const [retryToken, setRetryToken] = useState(0);
 
-    const availableTrucks = Array.from(trucks.values()).filter(t => t.status === 'AVAILABLE');
+    const availableTrucks = useMemo(() => {
+        const list = Array.from(trucks.values()).filter(t => t.status === 'AVAILABLE' && !t.isServiceUnit);
+        if (startLoc) {
+            list.sort((a, b) => {
+                const distA = calculateDistance(startLoc.latitude, startLoc.longitude, a.currentLat, a.currentLng);
+                const distB = calculateDistance(startLoc.latitude, startLoc.longitude, b.currentLat, b.currentLng);
+                return distA - distB;
+            });
+        }
+        return list;
+    }, [trucks, startLoc]);
+
     const selectedTruckData = selectedTruckId ? availableTrucks.find(t => t.id === selectedTruckId) : null;
     const selectedDistance = selectedTruckData && startLoc
         ? calculateDistance(startLoc.latitude, startLoc.longitude, selectedTruckData.currentLat, selectedTruckData.currentLng)
@@ -43,6 +54,12 @@ export default function OrderBuilder() {
             setSelectedTruckId('');
         }
     }, [trucks, selectedTruckId, isBuilderOpen, showToast, setSelectedTruckId]);
+
+    useEffect(() => {
+        if (isBuilderOpen && startLoc && !selectedTruckId && availableTrucks.length > 0) {
+            setSelectedTruckId(availableTrucks[0].id);
+        }
+    }, [isBuilderOpen, startLoc, selectedTruckId, availableTrucks, setSelectedTruckId]);
 
     const startLocId = startLoc?.id;
     const endLocId = endLoc?.id;
@@ -140,12 +157,12 @@ export default function OrderBuilder() {
                 routePolylineApproaching: previewPoly1Str,
                 routeDistanceApproaching: previewDist1,
                 routePolylineTransit: previewPoly2Str,
-                routeDistanceTransit: previewDist2
+                routeDistanceTransit: previewDist2,
+                pricePerKm: 4.5
             });
             handleCancelOrder();
             showToast('Zlecenie zostało pomyślnie wygenerowane.', 'success');
 
-            // NAPRAWIONE: Natychmiastowe aktualizacje stanu w celu usunięcia odczucia "laga"
             refreshOrders();
             refreshRoutes();
             refreshVehicles();

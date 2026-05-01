@@ -1,5 +1,6 @@
 package com.transflow.backend.simulation.strategy;
 
+import com.transflow.backend.fleet.Driver;
 import com.transflow.backend.fleet.Vehicle;
 import com.transflow.backend.fleet.VehicleRepository;
 import com.transflow.backend.logistics.Order;
@@ -96,6 +97,14 @@ public class CommercialTransportHandler implements OrderStateHandler {
                                     vehicle.getCurrentLat(), vehicle.getCurrentLng(),
                                     brokenCargoOrder.getStartLocation().getLatitude(), brokenCargoOrder.getStartLocation().getLongitude()
                             );
+
+                            Driver oldDriver = brokenCargoOrder.getDriver();
+                            if (oldDriver != null) {
+                                oldDriver.setStatus("AVAILABLE");
+                                ctx.addDriver(oldDriver);
+                                ctx.setBroadcastDrivers(true);
+                            }
+
                             brokenCargoOrder.setVehicle(vehicle);
                             brokenCargoOrder.setDriver(order.getDriver());
                             brokenCargoOrder.setRoutePolylineApproaching(route != null ? route.polyline() : "");
@@ -143,6 +152,13 @@ public class CommercialTransportHandler implements OrderStateHandler {
                 } else {
                     order.setStatus("COMPLETED");
                     vehicle.setStatus("AVAILABLE");
+
+                    if (order.getDriver() != null) {
+                        order.getDriver().setStatus("AVAILABLE");
+                        ctx.addDriver(order.getDriver());
+                        ctx.setBroadcastDrivers(true);
+                    }
+
                     ctx.setBroadcastOrders(true);
                     ctx.setBroadcastVehicles(true);
                 }

@@ -14,6 +14,7 @@ public class Vehicle {
     @Version
     private Long version = 0L;
 
+    @Column(unique = true)
     private String plateNumber;
     private String brand;
     private String model;

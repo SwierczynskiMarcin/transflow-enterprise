@@ -241,7 +241,15 @@ public class RescueRadarService {
 
                         double towingDist = 0.0;
                         if (projectedEndBase != null) {
-                            towingDist = physicsService.calculateDistance(currentTarget.getCurrentLat(), currentTarget.getCurrentLng(), projectedEndBase.getLatitude(), projectedEndBase.getLongitude());
+                            RoutingService.RouteInfo towRoute = routingService.getRoute(
+                                    currentTarget.getCurrentLat(), currentTarget.getCurrentLng(),
+                                    projectedEndBase.getLatitude(), projectedEndBase.getLongitude()
+                            );
+                            if (towRoute != null) {
+                                towingDist = towRoute.distance() / 1000.0;
+                            } else {
+                                towingDist = physicsService.calculateDistance(currentTarget.getCurrentLat(), currentTarget.getCurrentLng(), projectedEndBase.getLatitude(), projectedEndBase.getLongitude());
+                            }
                         }
 
                         currentTaskRemainingKm = approachRemaining + towingDist;

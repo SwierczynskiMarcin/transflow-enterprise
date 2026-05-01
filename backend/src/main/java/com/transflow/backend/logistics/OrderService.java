@@ -18,22 +18,23 @@ public class OrderService {
     private final VehicleRepository vehicleRepository;
     private final LocationRepository locationRepository;
     private final DriverRepository driverRepository;
+    private final AutomationService automationService;
 
     @Transactional
     public Order createOrder(OrderCreateRequest request) {
         Vehicle vehicle = vehicleRepository.findById(request.vehicleId())
-                .orElseThrow(() -> new IllegalArgumentException("Nie znaleziono pojazdu"));
+                .orElseThrow(() -> new IllegalArgumentException(""));
 
         Location startLoc = locationRepository.findById(request.startLocationId())
-                .orElseThrow(() -> new IllegalArgumentException("Nie znaleziono lokalizacji początkowej"));
+                .orElseThrow(() -> new IllegalArgumentException(""));
 
         Location endLoc = locationRepository.findById(request.endLocationId())
-                .orElseThrow(() -> new IllegalArgumentException("Nie znaleziono lokalizacji końcowej"));
+                .orElseThrow(() -> new IllegalArgumentException(""));
 
         Driver assignedDriver = driverRepository.findAll().stream()
                 .filter(d -> d.getAssignedVehicle() != null && d.getAssignedVehicle().getId().equals(vehicle.getId()))
                 .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException("Pojazd nie posiada przypisanego kierowcy. Przypisz kierowcę przed wysłaniem w trasę."));
+                .orElseThrow(() -> new IllegalArgumentException(""));
 
         Order order = new Order();
         order.setVehicle(vehicle);
@@ -54,13 +55,32 @@ public class OrderService {
         order.setRoutePolylineTransit(request.routePolylineTransit());
         order.setRouteDistanceTransit(request.routeDistanceTransit());
 
+        double price = request.pricePerKm() != null ? request.pricePerKm() : 4.5;
+
+        double totalDistanceKm = request.routeDistanceTransit() / 1000.0;
+        double rawAmount = totalDistanceKm * price;
+
+        double roundedPrice = Math.round(price * 100.0) / 100.0;
+        double roundedAmount = Math.round(rawAmount * 100.0) / 100.0;
+
+        order.setPricePerKm(roundedPrice);
+        order.setContractedAmount(roundedAmount);
+
+        order.setRpaEmailSent(false);
+        order.setRpaPaymentInfoReceived(false);
+        order.setRpaAuditStatus("PENDING");
+
         vehicle.setStatus("BUSY");
         assignedDriver.setStatus("BUSY");
 
         vehicleRepository.save(vehicle);
         driverRepository.save(assignedDriver);
 
-        return orderRepository.save(order);
+        Order savedOrder = orderRepository.save(order);
+
+        automationService.triggerBiller();
+
+        return savedOrder;
     }
 
     public List<Order> getAllOrders() {

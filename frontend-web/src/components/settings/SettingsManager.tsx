@@ -73,12 +73,14 @@ function ResetConfirmModal({ onConfirm, onCancel }: { onConfirm: () => void; onC
 }
 
 export default function SettingsManager() {
-    const { trucks, refreshLocations, refreshVehicles, refreshRoutes, refreshOrders } = useSimulation();
+    const {
+        trucks, refreshLocations, refreshVehicles, refreshRoutes, refreshOrders,
+        globalLoadingAction, setGlobalLoadingAction,
+        dispatchStatus, setDispatchStatus,
+        actualDispatched
+    } = useSimulation();
     const { showToast } = useToast();
 
-    const[loadingAction, setLoadingAction] = useState<string | null>(null);
-    const [dispatchStatus, setDispatchStatus] = useState<{ active: boolean, requested: number, initialMax: number } | null>(null);
-    const[actualDispatched, setActualDispatched] = useState(0);
     const [showResetModal, setShowResetModal] = useState(false);
 
     const availableTrucksWithDrivers = Array.from(trucks.values()).filter(t => t.status === 'AVAILABLE' && !t.isServiceUnit && t.driverName && t.driverName !== 'Brak przypisania');
@@ -94,33 +96,10 @@ export default function SettingsManager() {
                 setDispatchCount(0);
             }
         }
-    },[maxDispatch, dispatchStatus]);
-
-    useEffect(() => {
-        if (dispatchStatus?.active) {
-            const dispatched = dispatchStatus.initialMax - maxDispatch;
-            if (dispatched > actualDispatched) {
-                setActualDispatched(dispatched);
-            }
-        } else {
-            setActualDispatched(0);
-        }
-    }, [maxDispatch, dispatchStatus]);
-
-    useEffect(() => {
-        if (loadingAction === 'dispatch' && dispatchStatus) {
-            if (actualDispatched >= dispatchStatus.requested || maxDispatch === 0) {
-                setLoadingAction(null);
-                setDispatchStatus(null);
-                setActualDispatched(0);
-                showToast(`Zakończono pracę dyspozytora. Wysłano ${actualDispatched} pojazdów w trasy.`, 'success');
-                Promise.all([refreshVehicles(), refreshRoutes(), refreshOrders()]).catch(() => {});
-            }
-        }
-    },[maxDispatch, loadingAction, dispatchStatus, actualDispatched, showToast, refreshVehicles, refreshRoutes, refreshOrders]);
+    }, [maxDispatch, dispatchStatus, dispatchCount]);
 
     const executeAction = async (actionId: string, actionFn: () => Promise<any>, successText: string) => {
-        setLoadingAction(actionId);
+        setGlobalLoadingAction(actionId);
 
         if (actionId === 'dispatch') {
             setDispatchStatus({ active: true, requested: dispatchCount, initialMax: maxDispatch });
@@ -129,7 +108,7 @@ export default function SettingsManager() {
                 showToast("Zadanie dyspozytora uruchomione w tle. Proszę czekać...", 'info');
             } catch (error: any) {
                 showToast(error.message, 'error');
-                setLoadingAction(null);
+                setGlobalLoadingAction(null);
                 setDispatchStatus(null);
             }
             return;
@@ -151,7 +130,7 @@ export default function SettingsManager() {
         } catch (error: any) {
             showToast(error.message, 'error');
         } finally {
-            setLoadingAction(null);
+            setGlobalLoadingAction(null);
         }
     };
 
@@ -207,10 +186,10 @@ export default function SettingsManager() {
                     </div>
                     <button
                         onClick={() => handleAction('locations', seedLocations, 'Sieć hubów została pomyślnie zsynchronizowana z bazą danych!')}
-                        disabled={loadingAction !== null}
+                        disabled={globalLoadingAction !== null}
                         className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-xl transition flex items-center justify-center gap-2 relative z-10 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                        {loadingAction === 'locations' ? <><Loader2 className="animate-spin" size={20} /> Generowanie mapy...</> : 'Rozwiń sieć w Europie'}
+                        {globalLoadingAction === 'locations' ? <><Loader2 className="animate-spin" size={20} /> Generowanie mapy...</> : 'Rozwiń sieć w Europie'}
                     </button>
                 </div>
 
@@ -229,10 +208,10 @@ export default function SettingsManager() {
                     </div>
                     <button
                         onClick={() => handleAction('fleet', seedFleet, 'Zasoby floty i kadr zostały zsynchronizowane.')}
-                        disabled={loadingAction !== null}
+                        disabled={globalLoadingAction !== null}
                         className="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-3 rounded-xl transition flex items-center justify-center gap-2 relative z-10 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                        {loadingAction === 'fleet' ? <><Loader2 className="animate-spin" size={20} /> Przygotowywanie pojazdów...</> : 'Zatrudnij Kadrę i Flotę'}
+                        {globalLoadingAction === 'fleet' ? <><Loader2 className="animate-spin" size={20} /> Przygotowywanie pojazdów...</> : 'Zatrudnij Kadrę i Flotę'}
                     </button>
                 </div>
 
@@ -249,7 +228,7 @@ export default function SettingsManager() {
                     </p>
 
                     <div className="mb-6 bg-slate-900/50 p-4 rounded-xl border border-slate-700 relative z-10 min-h-[90px] flex flex-col justify-center">
-                        {loadingAction === 'dispatch' && dispatchStatus ? (
+                        {globalLoadingAction === 'dispatch' && dispatchStatus ? (
                             <div className="w-full flex flex-col gap-2">
                                 <div className="flex justify-between text-xs font-bold uppercase tracking-wider text-slate-400">
                                     <span className="flex items-center gap-2"><Loader2 className="animate-spin text-amber-400" size={14}/> Trwa zadanie w tle (Background Job)...</span>
@@ -271,7 +250,7 @@ export default function SettingsManager() {
                                     max={maxDispatch > 0 ? maxDispatch : 1}
                                     value={dispatchCount}
                                     onChange={(e) => setDispatchCount(Number(e.target.value))}
-                                    disabled={maxDispatch === 0 || loadingAction !== null}
+                                    disabled={maxDispatch === 0 || globalLoadingAction !== null}
                                     className="w-full accent-amber-500 h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer disabled:opacity-50"
                                 />
                                 {maxDispatch === 0 && (
@@ -283,10 +262,10 @@ export default function SettingsManager() {
 
                     <button
                         onClick={() => handleAction('dispatch', () => autoDispatch(dispatchCount), `Dyspozytor pomyślnie wysłał ${dispatchCount} pojazdów w trasy.`)}
-                        disabled={maxDispatch === 0 || loadingAction !== null}
+                        disabled={maxDispatch === 0 || globalLoadingAction !== null}
                         className="w-full bg-amber-600 hover:bg-amber-500 text-white font-bold py-3 rounded-xl transition flex items-center justify-center gap-2 relative z-10 disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_0_15px_rgba(245,158,11,0.2)]"
                     >
-                        {loadingAction === 'dispatch' ? <><Loader2 className="animate-spin" size={20} /> Przetwarzanie asynchroniczne...</> : 'Uruchom Masowy Dispatch'}
+                        {globalLoadingAction === 'dispatch' ? <><Loader2 className="animate-spin" size={20} /> Przetwarzanie asynchroniczne...</> : 'Uruchom Masowy Dispatch'}
                     </button>
                 </div>
 
@@ -303,10 +282,10 @@ export default function SettingsManager() {
                     </p>
                     <button
                         onClick={() => handleAction('clear', clearAllData, 'System zresetowany. ID sekwencji wyzerowane.')}
-                        disabled={loadingAction !== null}
+                        disabled={globalLoadingAction !== null}
                         className="bg-rose-600 hover:bg-rose-500 text-white font-bold py-3 px-8 rounded-xl transition flex items-center justify-center gap-2 relative z-10 disabled:opacity-50 disabled:cursor-not-allowed border border-rose-500 shadow-[0_0_15px_rgba(225,29,72,0.3)] w-full md:w-auto"
                     >
-                        {loadingAction === 'clear' ? <><Loader2 className="animate-spin" size={20} /> Czyszczenie kaskadowe bazy...</> : 'Wyczyść wszystkie dane systemu'}
+                        {globalLoadingAction === 'clear' ? <><Loader2 className="animate-spin" size={20} /> Czyszczenie kaskadowe bazy...</> : 'Wyczyść wszystkie dane systemu'}
                     </button>
                 </div>
 

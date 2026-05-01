@@ -64,8 +64,17 @@ export interface OrderData {
     driver: { id: number; firstName: string; lastName: string } | null;
     cargoWeight: number;
     pricePerKm: number;
+    contractedAmount?: number;
+    rpaEmailSent?: boolean;
+    rpaAuditStatus?: string;
     status: string;
     progress: number;
+}
+
+export interface DispatchStatus {
+    active: boolean;
+    requested: number;
+    initialMax: number;
 }
 
 interface SimulationContextProps {
@@ -78,6 +87,9 @@ interface SimulationContextProps {
     virtualTime: string | null;
     mapCenter: [number, number];
     mapZoom: number;
+    globalLoadingAction: string | null;
+    dispatchStatus: DispatchStatus | null;
+    actualDispatched: number;
     togglePlay: () => Promise<void>;
     changeSpeed: (newSpeed: number) => Promise<void>;
     setMapViewState: (center: [number, number], zoom: number) => void;
@@ -86,6 +98,9 @@ interface SimulationContextProps {
     refreshRoutes: () => Promise<void>;
     refreshOrders: () => Promise<void>;
     updateVehicleLocally: (id: number, data: Partial<VehicleData>) => void;
+    setGlobalLoadingAction: (action: string | null) => void;
+    setDispatchStatus: (status: DispatchStatus | null) => void;
+    setActualDispatched: (count: number) => void;
 }
 
 const SimulationContext = createContext<SimulationContextProps | undefined>(undefined);
@@ -104,6 +119,13 @@ export const SimulationProvider: FC<{ children: ReactNode }> = ({ children }) =>
     const [virtualTime, setVirtualTime] = useState<string | null>(null);
     const [mapCenter, setMapCenter] = useState<[number, number]>([52.0, 19.0]);
     const [mapZoom, setMapZoom] = useState<number>(6);
+
+    const [globalLoadingAction, setGlobalLoadingAction] = useState<string | null>(null);
+    const [dispatchStatus, setDispatchStatus] = useState<DispatchStatus | null>(null);
+    const [actualDispatched, setActualDispatched] = useState<number>(0);
+
+    const availableTrucksWithDrivers = Array.from(trucks.values()).filter(t => t.status === 'AVAILABLE' && !t.isServiceUnit && t.driverName && t.driverName !== 'Brak przypisania');
+    const maxDispatch = availableTrucksWithDrivers.length;
 
     useEffect(() => {
         getSimulationStatus()
@@ -129,6 +151,29 @@ export const SimulationProvider: FC<{ children: ReactNode }> = ({ children }) =>
         refreshRoutes,
         refreshOrders
     });
+
+    useEffect(() => {
+        if (dispatchStatus?.active) {
+            const dispatched = dispatchStatus.initialMax - maxDispatch;
+            if (dispatched > actualDispatched) {
+                setActualDispatched(dispatched);
+            }
+        } else if (actualDispatched !== 0) {
+            setActualDispatched(0);
+        }
+    }, [maxDispatch, dispatchStatus, actualDispatched]);
+
+    useEffect(() => {
+        if (globalLoadingAction === 'dispatch' && dispatchStatus) {
+            if (actualDispatched >= dispatchStatus.requested || maxDispatch === 0) {
+                setGlobalLoadingAction(null);
+                setDispatchStatus(null);
+                setActualDispatched(0);
+                showToast(`Zakończono pracę dyspozytora. Wysłano ${actualDispatched} pojazdów w trasy.`, 'success');
+                Promise.all([refreshVehicles(), refreshRoutes(), refreshOrders()]).catch(() => {});
+            }
+        }
+    }, [maxDispatch, globalLoadingAction, dispatchStatus, actualDispatched, showToast, refreshVehicles, refreshRoutes, refreshOrders]);
 
     const togglePlay = async () => {
         try {
@@ -156,10 +201,10 @@ export const SimulationProvider: FC<{ children: ReactNode }> = ({ children }) =>
     return (
         <SimulationContext.Provider value={{
             trucks, locations, activeRoutes, orders, isPlaying, speed, virtualTime,
-            mapCenter, mapZoom,
+            mapCenter, mapZoom, globalLoadingAction, dispatchStatus, actualDispatched,
             togglePlay, changeSpeed, setMapViewState,
             refreshVehicles, refreshLocations, refreshRoutes, refreshOrders,
-            updateVehicleLocally
+            updateVehicleLocally, setGlobalLoadingAction, setDispatchStatus, setActualDispatched
         }}>
             {children}
         </SimulationContext.Provider>

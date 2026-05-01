@@ -1,6 +1,8 @@
 package com.transflow.backend.logistics;
 
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 
 import java.util.List;
@@ -10,7 +12,14 @@ import java.util.Map;
 @Service
 public class RoutingService {
 
-    private final RestTemplate restTemplate = new RestTemplate();
+    private final RestTemplate restTemplate;
+
+    public RoutingService() {
+        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(1500);
+        factory.setReadTimeout(2000);
+        this.restTemplate = new RestTemplate(factory);
+    }
 
     public RouteInfo getRoute(double startLat, double startLng, double endLat, double endLng) {
         String url = String.format(Locale.US,
@@ -30,8 +39,10 @@ public class RoutingService {
                     return new RouteInfo(geometry, distance);
                 }
             }
+        } catch (RestClientException e) {
+            System.err.println("Błąd pobierania trasy z OSRM (Timeout/Odmowa): " + e.getMessage());
         } catch (Exception e) {
-            System.err.println("Błąd pobierania trasy z OSRM: " + e.getMessage());
+            System.err.println("Nieoczekiwany błąd OSRM: " + e.getMessage());
         }
         return null;
     }

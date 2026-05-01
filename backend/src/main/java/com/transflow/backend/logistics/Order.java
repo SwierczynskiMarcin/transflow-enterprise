@@ -30,6 +30,12 @@ public class Order {
 
     private Double cargoWeight;
     private Double pricePerKm;
+    private Double contractedAmount;
+
+    private Boolean rpaEmailSent = false;
+    private Boolean rpaPaymentInfoReceived = false;
+    private String rpaAuditStatus = "PENDING";
+
     private String status;
 
     private Double startOdometer;
@@ -37,6 +43,7 @@ public class Order {
     private Double progress = 0.0;
 
     private Double startLatApproaching;
+    private Double startLatTransit;
     private Double startLngApproaching;
     private Integer loadingTicksRemaining = 0;
 

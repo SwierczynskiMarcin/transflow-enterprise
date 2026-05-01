@@ -1,5 +1,6 @@
 package com.transflow.backend.simulation.strategy;
 
+import com.transflow.backend.fleet.Driver;
 import com.transflow.backend.fleet.Vehicle;
 import com.transflow.backend.fleet.VehicleRepository;
 import com.transflow.backend.logistics.Order;
@@ -70,6 +71,13 @@ public class RescueOperationHandler implements OrderStateHandler {
                             .findFirst().orElse(null);
 
                     if (brokenCargoOrder != null) {
+                        Driver oldDriver = brokenCargoOrder.getDriver();
+                        if (oldDriver != null) {
+                            oldDriver.setStatus("AVAILABLE");
+                            ctx.addDriver(oldDriver);
+                            ctx.setBroadcastDrivers(true);
+                        }
+
                         brokenCargoOrder.setVehicle(vehicle);
                         brokenCargoOrder.setDriver(order.getDriver());
                         brokenCargoOrder.setStatus("HANDOVER");
@@ -82,10 +90,22 @@ public class RescueOperationHandler implements OrderStateHandler {
                     } else {
                         vehicle.setStatus("AVAILABLE");
                         vehicle.setTargetRescueId(null);
+
+                        if (order.getDriver() != null) {
+                            order.getDriver().setStatus("AVAILABLE");
+                            ctx.addDriver(order.getDriver());
+                            ctx.setBroadcastDrivers(true);
+                        }
                     }
                 } else {
                     vehicle.setStatus("AVAILABLE");
                     vehicle.setTargetRescueId(null);
+
+                    if (order.getDriver() != null) {
+                        order.getDriver().setStatus("AVAILABLE");
+                        ctx.addDriver(order.getDriver());
+                        ctx.setBroadcastDrivers(true);
+                    }
                 }
                 ctx.setBroadcastOrders(true);
                 ctx.setBroadcastVehicles(true);

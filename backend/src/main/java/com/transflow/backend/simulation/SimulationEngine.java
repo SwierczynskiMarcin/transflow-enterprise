@@ -13,6 +13,7 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.HashMap;
 import java.util.List;
@@ -27,6 +28,7 @@ public class SimulationEngine {
     private final SimpMessagingTemplate messagingTemplate;
     private final VirtualClock virtualClock;
     private final List<OrderStateHandler> stateHandlers;
+    private final TransactionTemplate transactionTemplate;
 
     private static final double TRUCK_SPEED_KMH = 80.0;
     private static final int TICK_RATE_SECONDS = 2;
@@ -37,13 +39,41 @@ public class SimulationEngine {
     @Getter @Setter
     private double timeMultiplier = 60.0;
 
-    @Scheduled(fixedRate = 2000)
+    @Scheduled(fixedDelay = 2000)
     public void simulateMovement() {
         messagingTemplate.convertAndSend("/topic/simulation",
                 new SimulationStateDTO(isRunning, timeMultiplier, virtualClock.getCurrentTime()));
 
         if (!isRunning) return;
 
+        try {
+            SimulationUpdateContext executedCtx = transactionTemplate.execute(status -> performTick());
+
+            if (executedCtx != null) {
+                boolean hasNewOrders = !executedCtx.getNewOrdersToSave().isEmpty();
+
+                if (executedCtx.isBroadcastOrders() || hasNewOrders) {
+                    messagingTemplate.convertAndSend("/topic/updates", "ORDERS");
+                }
+                if (executedCtx.isBroadcastVehicles() || hasNewOrders) {
+                    messagingTemplate.convertAndSend("/topic/updates", "VEHICLES");
+                }
+                if (executedCtx.isBroadcastDrivers()) {
+                    messagingTemplate.convertAndSend("/topic/updates", "DRIVERS");
+                }
+
+                if (!executedCtx.getTickUpdates().isEmpty()) {
+                    messagingTemplate.convertAndSend("/topic/trucks", executedCtx.getTickUpdates());
+                }
+            }
+        } catch (ObjectOptimisticLockingFailureException e) {
+            System.out.println("[SimulationEngine] Optymistyczne blokowanie: Wykryto zewnętrzną modyfikację. Wycofuję tick i ponawiam synchronizację w następnym cyklu.");
+        } catch (Exception e) {
+            System.err.println("[SimulationEngine] Błąd podczas ticka symulacji: " + e.getMessage());
+        }
+    }
+
+    private SimulationUpdateContext performTick() {
         virtualClock.advanceTime(TICK_RATE_SECONDS, timeMultiplier);
 
         List<Order> activeOrders = orderRepository.findByStatusIn(List.of(
@@ -51,7 +81,6 @@ public class SimulationEngine {
                 "HANDOVER", "TOW_APPROACHING", "WAITING_FOR_CARGO_CLEARANCE", "TOWING"));
 
         SimulationUpdateContext ctx = new SimulationUpdateContext();
-
         Map<Long, VehicleSimulationDTO> tickUpdatesByVehicleId = new HashMap<>();
 
         for (Order order : activeOrders) {
@@ -82,7 +111,7 @@ public class SimulationEngine {
                     try {
                         handler.handle(order, distanceInTickMeters, distanceInTickKm, ctx);
                     } catch (Exception e) {
-                        System.err.println("[SimulationEngine] Błąd przetwarzania statusu " + order.getStatus() + " dla pojazdu " + vehicle.getId());
+                        System.err.println("[SimulationEngine] Błąd strategii " + order.getStatus() + " dla pojazdu " + vehicle.getId());
                     }
                     break;
                 }
@@ -101,53 +130,22 @@ public class SimulationEngine {
             ));
         }
 
-        boolean hadOle = false;
-
-        if (!ctx.getVehiclesToSave().isEmpty()) {
-            for (Vehicle v : ctx.getVehiclesToSave()) {
-                try {
-                    vehicleRepository.save(v);
-                } catch (ObjectOptimisticLockingFailureException e) {
-                    hadOle = true;
-                } catch (Exception ignored) {}
-            }
+        for (Vehicle v : ctx.getVehiclesToSave()) {
+            vehicleRepository.save(v);
         }
 
-        if (!ctx.getOrdersToSave().isEmpty()) {
-            for (Order o : ctx.getOrdersToSave()) {
-                try {
-                    orderRepository.save(o);
-                } catch (ObjectOptimisticLockingFailureException e) {
-                    hadOle = true;
-                } catch (Exception ignored) {}
-            }
+        for (Order o : ctx.getOrdersToSave()) {
+            orderRepository.save(o);
         }
 
-        boolean hasNewOrders = !ctx.getNewOrdersToSave().isEmpty();
-        if (hasNewOrders) {
-            for (Order o : ctx.getNewOrdersToSave()) {
-                try {
-                    orderRepository.save(o);
-                } catch (Exception ignored) {}
-            }
+        for (Order o : ctx.getNewOrdersToSave()) {
+            orderRepository.save(o);
         }
 
         for (VehicleSimulationDTO dto : tickUpdatesByVehicleId.values()) {
             ctx.addTickUpdate(dto);
         }
 
-        boolean shouldBroadcastOrders = ctx.isBroadcastOrders() || hasNewOrders || hadOle;
-        boolean shouldBroadcastVehicles = ctx.isBroadcastVehicles() || hasNewOrders || hadOle;
-
-        if (shouldBroadcastOrders) {
-            messagingTemplate.convertAndSend("/topic/updates", "ORDERS");
-        }
-        if (shouldBroadcastVehicles) {
-            messagingTemplate.convertAndSend("/topic/updates", "VEHICLES");
-        }
-
-        if (!ctx.getTickUpdates().isEmpty()) {
-            messagingTemplate.convertAndSend("/topic/trucks", ctx.getTickUpdates());
-        }
+        return ctx;
     }
 }

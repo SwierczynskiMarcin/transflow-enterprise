@@ -11,6 +11,7 @@ import com.transflow.backend.logistics.OrderService;
 import com.transflow.backend.logistics.RoutingService;
 import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
@@ -19,6 +20,8 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -88,7 +91,6 @@ public class DemoService {
 
         for (int i = 0; i < Math.min(5, toAdd); i++) {
             Vehicle msu = new Vehicle();
-            msu.setPlateNumber("MSU" + String.format("%04d", random.nextInt(10000)));
             msu.setBrand("Volvo");
             msu.setModel("FMX Recovery");
             msu.setBaseFuelConsumption(35.0);
@@ -105,7 +107,19 @@ public class DemoService {
                 msu.setCurrentLat(52.2297); msu.setCurrentLng(21.0122);
             }
 
-            Vehicle saved = vehicleRepository.save(msu);
+            Vehicle saved = null;
+            while (saved == null) {
+                String plate = "MSU" + String.format("%04d", random.nextInt(10000));
+                if (vehicleRepository.existsByPlateNumber(plate)) {
+                    continue;
+                }
+                msu.setPlateNumber(plate);
+                try {
+                    saved = vehicleRepository.saveAndFlush(msu);
+                } catch (DataIntegrityViolationException e) {
+                }
+            }
+
             Driver driver = new Driver();
             driver.setFirstName("Serwisant"); driver.setLastName(LAST_NAMES[random.nextInt(LAST_NAMES.length)]);
             driver.setPhoneNumber("+48 800" + random.nextInt(999999));
@@ -116,8 +130,6 @@ public class DemoService {
 
         for (int i = 5; i < toAdd; i++) {
             Vehicle vehicle = new Vehicle();
-            String plate = (char)(random.nextInt(26) + 'A') + "" + (char)(random.nextInt(26) + 'A') + String.format("%05d", random.nextInt(100000));
-            vehicle.setPlateNumber(plate);
             int brandIndex = random.nextInt(BRANDS.length);
             vehicle.setBrand(BRANDS[brandIndex]);
             vehicle.setModel(MODELS[brandIndex]);
@@ -136,7 +148,18 @@ public class DemoService {
                 vehicle.setCurrentLng(21.0122 + (random.nextDouble() - 0.5) * 5.0);
             }
 
-            Vehicle savedVehicle = vehicleRepository.save(vehicle);
+            Vehicle savedVehicle = null;
+            while (savedVehicle == null) {
+                String plate = (char)(random.nextInt(26) + 'A') + "" + (char)(random.nextInt(26) + 'A') + String.format("%05d", random.nextInt(100000));
+                if (vehicleRepository.existsByPlateNumber(plate)) {
+                    continue;
+                }
+                vehicle.setPlateNumber(plate);
+                try {
+                    savedVehicle = vehicleRepository.saveAndFlush(vehicle);
+                } catch (DataIntegrityViolationException e) {
+                }
+            }
 
             Driver driver = new Driver();
             driver.setFirstName(FIRST_NAMES[random.nextInt(FIRST_NAMES.length)]);
@@ -153,14 +176,19 @@ public class DemoService {
 
     @Transactional
     public void clearAllData() {
-        entityManager.createNativeQuery("TRUNCATE TABLE fuel_logs, orders, drivers, vehicles, locations RESTART IDENTITY CASCADE").executeUpdate();
+        entityManager.createNativeQuery("TRUNCATE TABLE invoice_audits, fuel_logs, orders, drivers, vehicles, locations RESTART IDENTITY CASCADE").executeUpdate();
     }
 
     @Async
     public void autoDispatch(int count) {
+        Set<Long> availableDriverVehicleIds = driverRepository.findAll().stream()
+                .filter(d -> "AVAILABLE".equals(d.getStatus()) && d.getAssignedVehicle() != null)
+                .map(d -> d.getAssignedVehicle().getId())
+                .collect(Collectors.toSet());
+
         List<Long> availableVehicleIds = vehicleRepository.findAll().stream()
                 .filter(v -> "AVAILABLE".equals(v.getStatus()) && !Boolean.TRUE.equals(v.getIsServiceUnit()))
-                .filter(v -> driverRepository.findAll().stream().anyMatch(d -> d.getAssignedVehicle() != null && d.getAssignedVehicle().getId().equals(v.getId()) && "AVAILABLE".equals(d.getStatus())))
+                .filter(v -> availableDriverVehicleIds.contains(v.getId()))
                 .map(Vehicle::getId)
                 .toList();
 
@@ -197,7 +225,8 @@ public class DemoService {
                 OrderCreateRequest req = new OrderCreateRequest(
                         vehicle.getId(), startLoc.getId(), endLoc.getId(),
                         approachRoute.polyline(), approachRoute.distance(),
-                        transitRoute.polyline(), transitRoute.distance()
+                        transitRoute.polyline(), transitRoute.distance(),
+                        4.5
                 );
 
                 try {

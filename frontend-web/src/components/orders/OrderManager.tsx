@@ -1,16 +1,24 @@
 import { useMemo } from 'react';
-import { ClipboardList, Route, Truck, PackageCheck, Wrench } from 'lucide-react';
+import { ClipboardList, Route, Truck, PackageCheck, Wrench, Bot, FileSearch } from 'lucide-react';
 import { useSimulation } from '../../context/SimulationContext';
 
 export default function OrderManager() {
     const { orders, trucks } = useSimulation();
 
-    const computedOrders = useMemo(() => {
-        return orders.map(order => {
-            let computedStatus = order.status;
-            let computedProgress = order.progress;
+    const historyOrders = useMemo(() => {
+        return orders
+            .filter(o => o.status === 'COMPLETED')
+            .map(order => ({ ...order, computedStatus: 'COMPLETED', computedProgress: 1.0 }))
+            .sort((a, b) => b.id - a.id);
+    }, [orders]);
 
-            if (['APPROACHING', 'LOADING', 'IN_TRANSIT', 'RESCUE_APPROACHING', 'HANDOVER', 'TOW_APPROACHING', 'WAITING_FOR_CARGO_CLEARANCE', 'TOWING'].includes(order.status)) {
+    const liveOrders = useMemo(() => {
+        return orders
+            .filter(o => o.status !== 'COMPLETED')
+            .map(order => {
+                let computedStatus = order.status;
+                let computedProgress = order.progress;
+
                 const liveTruck = order.vehicle ? trucks.get(order.vehicle.id) : null;
                 if (liveTruck) {
                     if (liveTruck.status === 'AVAILABLE') {
@@ -31,19 +39,12 @@ export default function OrderManager() {
                         computedProgress = liveTruck.progress !== undefined ? liveTruck.progress : order.progress;
                     }
                 }
-            }
 
-            return { ...order, computedStatus, computedProgress };
-        });
+                return { ...order, computedStatus, computedProgress };
+            })
+            .filter(o => ['APPROACHING', 'LOADING', 'IN_TRANSIT', 'BROKEN', 'RESCUE_APPROACHING', 'HANDOVER', 'TOW_APPROACHING', 'WAITING_FOR_CARGO_CLEARANCE', 'TOWING', 'WAITING_FOR_TOW', 'BEING_TOWED'].includes(o.computedStatus))
+            .sort((a, b) => b.id - a.id);
     }, [orders, trucks]);
-
-    const liveOrders = computedOrders
-        .filter(o =>['APPROACHING', 'LOADING', 'IN_TRANSIT', 'BROKEN', 'RESCUE_APPROACHING', 'HANDOVER', 'TOW_APPROACHING', 'WAITING_FOR_CARGO_CLEARANCE', 'TOWING', 'WAITING_FOR_TOW', 'BEING_TOWED'].includes(o.computedStatus))
-        .sort((a, b) => b.id - a.id);
-
-    const historyOrders = computedOrders
-        .filter(o => o.computedStatus === 'COMPLETED')
-        .sort((a, b) => b.id - a.id);
 
     const getStatusBadge = (status: string, progress: number) => {
         if (status === 'BROKEN') return <span className="bg-rose-500/20 text-rose-400 px-3 py-1 rounded-full text-xs font-bold uppercase animate-pulse">Awaria na trasie ({Math.round(progress * 100)}%)</span>;
@@ -84,6 +85,7 @@ export default function OrderManager() {
                             <th className="p-4 border-b border-slate-700">ID</th>
                             <th className="p-4 border-b border-slate-700">Trasa / Cel</th>
                             <th className="p-4 border-b border-slate-700">Zasoby Flotowe</th>
+                            <th className="p-4 border-b border-slate-700">Kontrakt & RPA</th>
                             <th className="p-4 border-b border-slate-700">Status & Postęp</th>
                         </tr>
                         </thead>
@@ -110,6 +112,19 @@ export default function OrderManager() {
                                     </div>
                                 </td>
                                 <td className="p-4">
+                                    <div className="flex flex-col gap-1">
+                                        <span className="text-sm font-bold text-emerald-400">
+                                            {order.contractedAmount ? `${order.contractedAmount.toFixed(2)} PLN` : '--- PLN'}
+                                        </span>
+                                        <div className="flex items-center gap-1.5 mt-1">
+                                            <Bot size={14} className={order.rpaEmailSent ? "text-cyan-400" : "text-slate-500"} />
+                                            <span className={`text-[10px] font-bold uppercase tracking-wider ${order.rpaEmailSent ? "text-cyan-400" : "text-slate-500"}`}>
+                                                {order.rpaEmailSent ? 'Awizo wysłane' : 'Oczekuje na Bota'}
+                                            </span>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td className="p-4">
                                     <div className="flex flex-col gap-2">
                                         <div>{getStatusBadge(order.computedStatus, order.computedProgress)}</div>
                                         <div className="w-full bg-slate-700 rounded-full h-1.5 overflow-hidden">
@@ -120,7 +135,7 @@ export default function OrderManager() {
                             </tr>
                         ))}
                         {liveOrders.length === 0 && (
-                            <tr><td colSpan={4} className="p-8 text-center text-slate-500">Brak aktywnych transportów w tym momencie.</td></tr>
+                            <tr><td colSpan={5} className="p-8 text-center text-slate-500">Brak aktywnych transportów w tym momencie.</td></tr>
                         )}
                         </tbody>
                     </table>
@@ -138,6 +153,7 @@ export default function OrderManager() {
                             <th className="p-4 border-b border-slate-700">ID</th>
                             <th className="p-4 border-b border-slate-700">Trasa</th>
                             <th className="p-4 border-b border-slate-700">Zasoby Flotowe</th>
+                            <th className="p-4 border-b border-slate-700">Kontrakt & RPA</th>
                             <th className="p-4 border-b border-slate-700">Status</th>
                         </tr>
                         </thead>
@@ -162,11 +178,24 @@ export default function OrderManager() {
                                         {order.driver ? `[#${order.driver.id}] ${order.driver.lastName}` : <span className="italic">Kierowca usunięty</span>}
                                     </span>
                                 </td>
+                                <td className="p-4">
+                                    <div className="flex flex-col gap-1">
+                                        <span className="text-sm font-bold text-emerald-400">
+                                            {order.contractedAmount ? `${order.contractedAmount.toFixed(2)} PLN` : '--- PLN'}
+                                        </span>
+                                        <div className="flex items-center gap-1.5 mt-1">
+                                            <FileSearch size={14} className={order.rpaAuditStatus === 'APPROVED' ? 'text-emerald-400' : order.rpaAuditStatus === 'DISCREPANCY' ? 'text-rose-400' : 'text-slate-500'} />
+                                            <span className={`text-[10px] font-bold uppercase tracking-wider ${order.rpaAuditStatus === 'APPROVED' ? 'text-emerald-400' : order.rpaAuditStatus === 'DISCREPANCY' ? 'text-rose-400' : 'text-slate-500'}`}>
+                                                {order.rpaAuditStatus === 'APPROVED' ? 'Audyt OK' : order.rpaAuditStatus === 'DISCREPANCY' ? 'Błąd Faktury' : 'Audyt Pending'}
+                                            </span>
+                                        </div>
+                                    </div>
+                                </td>
                                 <td className="p-4">{getStatusBadge(order.computedStatus, 1)}</td>
                             </tr>
                         ))}
                         {historyOrders.length === 0 && (
-                            <tr><td colSpan={4} className="p-8 text-center text-slate-500">Brak ukończonych zleceń w historii.</td></tr>
+                            <tr><td colSpan={5} className="p-8 text-center text-slate-500">Brak ukończonych zleceń w historii.</td></tr>
                         )}
                         </tbody>
                     </table>

@@ -222,6 +222,14 @@ public class TowingOperationHandler implements OrderStateHandler {
                 ctx.setBroadcastVehicles(true);
             } else {
                 vehicle.setStatus("AVAILABLE");
+
+                Driver driver = driverRepository.findByAssignedVehicleId(vehicle.getId()).orElse(null);
+                if (driver != null) {
+                    driver.setStatus("AVAILABLE");
+                    ctx.addDriver(driver);
+                    ctx.setBroadcastDrivers(true);
+                }
+
                 ctx.setBroadcastVehicles(true);
             }
         }
