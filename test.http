@@ -1,0 +1,15 @@
+### Robot: Pobierz zlecenia czekające na wysłanie PDF/Emaila
+GET http://localhost:8080/api/rpa/pending-emails
+
+### Robot: Oznacz mail jako wysłany (wpisz poprawne ID zlecenia)
+POST http://localhost:8080/api/rpa/emails/3/mark-sent
+
+### Robot: Zapisz wynik audytu faktury
+POST http://localhost:8080/api/rpa/audit
+Content-Type: application/json
+
+{
+  "orderId": 1,
+  "scannedAmount": 450.00,
+  "confidenceScore": 0.98
+}

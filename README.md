@@ -1,6 +1,6 @@
 # TransFlow TMS
 
-**Real-Time Digital Twin & Transport Management System**
+**Real-Time Digital Twin, Transport Management System & RPA Integration**
 
 TransFlow TMS to platforma klasy enterprise przeznaczona do zarządzania flotą pojazdów ciężarowych w czasie rzeczywistym. System łączy silnik symulacji fizyki ruchu z interaktywną mapą live, pozwalając na monitorowanie, planowanie i stress-testowanie operacji logistycznych na skalę europejską.
 
@@ -17,6 +17,7 @@ TransFlow TMS to platforma klasy enterprise przeznaczona do zarządzania flotą 
 - [Komunikacja w czasie rzeczywistym](#komunikacja-w-czasie-rzeczywistym)
 - [Silnik symulacji](#silnik-symulacji)
 - [System misji ratunkowych (Rescue Radar)](#system-misji-ratunkowych-rescue-radar)
+- [Autonomiczna Integracja RPA (UiPath)](#autonomiczna-integracja-rpa-uipath)
 - [Tryb Demo](#tryb-demo)
 - [Struktura katalogów](#struktura-katalogów)
 
@@ -28,6 +29,8 @@ TransFlow TMS działa jako **cyfrowy bliźniak** (Digital Twin) floty transporto
 
 System obsługuje pełny cykl życia zlecenia transportowego: od przypisania pojazdu i kierowcy, przez fazę dojazdu do punktu załadunku, załadunek, transport, aż po rozładunek i powrót pojazdu do stanu `AVAILABLE`. Dodatkowo platforma oferuje moduł misji ratunkowych MSU, który automatycznie koordynuje holowanie uszkodzonych pojazdów przez dedykowane jednostki serwisowe.
 
+Ponadto platforma charakteryzuje się architekturą **Self-Healing** oraz w pełni autonomiczną orkiestracją robotów RPA (UiPath), które w tle generują faktury, weryfikują płatności i przeprowadzają audyty finansowe bez bezpośredniej ingerencji użytkownika.
+
 ---
 
 ## Stos technologiczny
@@ -36,30 +39,36 @@ System obsługuje pełny cykl życia zlecenia transportowego: od przypisania poj
 | Technologia | Wersja | Zastosowanie |
 |---|---|---|
 | Java | 17 | Język podstawowy |
-| Spring Boot | 4.0.3 | Framework aplikacji |
-| Spring Data JPA | — | Warstwa persystencji |
+| Spring Boot | 4.0.3 | Framework aplikacji, architektura mikroserwisowa |
+| Spring Data JPA | — | Warstwa persystencji, programowe zarządzanie transakcjami |
 | Spring WebSocket (STOMP) | — | Streaming danych w czasie rzeczywistym |
-| PostgreSQL + PostGIS | 15 | Baza danych |
+| PostgreSQL + PostGIS | 15 | Baza danych z obsługą danych przestrzennych (GIS) |
 | Lombok | — | Redukcja boilerplate |
 | Maven | 3.9.12 | Build tool |
 
 ### Frontend
 | Technologia | Wersja | Zastosowanie |
 |---|---|---|
-| React | 19.2.0 | Framework UI |
+| React | 19.2.0 | Framework UI z izolowanymi kontekstami renderowania |
 | TypeScript | 5.9.3 | Typowanie statyczne |
 | Vite | 7.3.1 | Bundler i dev server |
 | Tailwind CSS | 4.2.0 | Stylowanie |
-| React Leaflet | 5.0.0 | Interaktywna mapa |
-| @stomp/stompjs | 7.3.0 | Klient WebSocket |
+| React Leaflet | 5.0.0 | Interaktywna mapa (Canvas rendering) |
+| @stomp/stompjs | 7.3.0 | Klient WebSocket (Anti-Jitter) |
 | SockJS | 1.6.1 | Fallback WebSocket |
 | Lucide React | 0.575.0 | Ikony |
+
+### Automatyzacja (Robotic Process Automation)
+| Technologia | Zastosowanie |
+|---|---|
+| UiPath Studio / UiRobot | Generowanie PDF, wysyłka e-mail, weryfikacja płatności, audyt |
+| ProcessBuilder API | Wewnętrzny orkiestrator botów w kodzie Javy |
 
 ### Infrastruktura
 | Technologia | Zastosowanie |
 |---|---|
 | Docker Compose | Baza danych + pgAdmin |
-| OSRM (Open Source Routing Machine) | Wyznaczanie tras drogowych |
+| OSRM (Open Source Routing Machine) | Wyznaczanie rzeczywistych tras drogowych |
 
 ---
 
@@ -67,7 +76,7 @@ System obsługuje pełny cykl życia zlecenia transportowego: od przypisania poj
 
 System jest podzielony na trzy warstwy domenowe zgodne z zasadami Domain-Driven Design:
 
-```
+~~~text
 transflow/
 ├── backend/                          # Spring Boot API
 │   └── src/main/java/com/transflow/backend/
@@ -90,7 +99,7 @@ transflow/
         │   ├── orders/               # Panel zleceń
         │   └── settings/             # Ustawienia i tryb Demo
         └── context/                  # SimulationContext + MapContext
-```
+~~~
 
 ### Wzorzec Strategy w silniku symulacji
 
@@ -112,26 +121,27 @@ Izolacja renderowania warstw mapy (statyczne huby vs. dynamiczne pojazdy) zapewn
 - **JDK 17+**
 - **Node.js 20+** i npm
 - **Docker** i Docker Compose
-- Działający serwer **OSRM** (domyślnie: `http://router.project-osrm.org`)
+- Działający serwer **OSRM** (domyślnie: `[http://router.project-osrm.org](http://router.project-osrm.org)`)
+- **UiPath Studio** (opcjonalnie, do modyfikacji logiki RPA)
 
 ### Krok 1: Baza danych
 
 Uruchom PostgreSQL z rozszerzeniem PostGIS za pomocą Docker Compose:
 
-```bash
+~~~bash
 docker-compose up -d
-```
+~~~
 
 Baza danych będzie dostępna na porcie `5432`.  
 pgAdmin będzie dostępny pod adresem `http://localhost:5050` (login: `admin@transflow.com`, hasło: `admin`).
 
 ### Krok 2: Backend
 
-```bash
+~~~bash
 cd backend
 ./mvnw clean install
 ./mvnw spring-boot:run
-```
+~~~
 
 API będzie dostępne pod adresem: `http://localhost:8080`
 
@@ -139,11 +149,11 @@ Schemat bazy danych jest tworzony automatycznie przez Hibernate (`spring.jpa.hib
 
 ### Krok 3: Frontend
 
-```bash
+~~~bash
 cd frontend-web
 npm install
 npm run dev
-```
+~~~
 
 Interfejs będzie dostępny pod adresem: `http://localhost:5173`
 
@@ -152,7 +162,7 @@ Interfejs będzie dostępny pod adresem: `http://localhost:5173`
 Po uruchomieniu systemu możesz skorzystać z panelu **Ustawienia → Demo**, aby jednym kliknięciem:
 1. Dodać 25 hubów logistycznych (europejskie stolice)
 2. Wygenerować flotę 50 pojazdów z kierowcami (w tym jednostki MSU)
-3. Automatycznie wyekspediować wybrane pojazdy na losowe trasy
+3. Automatycznie wyekspediować wybrane pojazdy na losowe trasy (Optymalizacja O(N))
 
 ---
 
@@ -194,7 +204,7 @@ Po uruchomieniu systemu możesz skorzystać z panelu **Ustawienia → Demo**, ab
 |---|---|---|
 | `GET` | `/api/vehicles` | Pobierz wszystkie pojazdy |
 | `POST` | `/api/vehicles` | Dodaj pojazd |
-| `PUT` | `/api/vehicles/{id}` | Zaktualizuj pojazd |
+| `PUT` | `/api/vehicles/{id}` | Zaktualizuj pojazd (obejmuje walidację zajętości) |
 | `DELETE` | `/api/vehicles/{id}` | Usuń pojazd |
 | `POST` | `/api/vehicles/{id}/breakdown` | Symuluj awarię pojazdu |
 
@@ -228,9 +238,11 @@ Po uruchomieniu systemu możesz skorzystać z panelu **Ustawienia → Demo**, ab
 | `POST` | `/api/rescue-radar/assign` | Przypisz jednostkę MSU ręcznie |
 | `POST` | `/api/rescue-radar/{vehicleId}/auto-assign` | Automatycznie przypisz najlepszą MSU |
 
-### Symulacja — `/api/simulation`
+### Orkiestracja RPA i Symulacja — `/api/rpa` & `/api/simulation`
 | Metoda | Endpoint | Opis |
 |---|---|---|
+| `GET` | `/api/rpa/pending-emails` | Pobiera zlecenia oczekujące na boty Dispatchera (filtruje Poison Pills). |
+| `POST` | `/api/rpa/audit` | Endpoint dla bota Audytora do zapisywania logów weryfikacji. |
 | `GET` | `/api/simulation/status` | Pobierz stan silnika (running, multiplier) |
 | `POST` | `/api/simulation/toggle` | Uruchom / zatrzymaj symulację |
 | `POST` | `/api/simulation/speed?multiplier={n}` | Ustaw mnożnik czasu (1–600) |
@@ -245,7 +257,7 @@ Po uruchomieniu systemu możesz skorzystać z panelu **Ustawienia → Demo**, ab
 |---|---|---|
 | `POST` | `/api/demo/seed-locations` | Dodaj 25 europejskich hubów |
 | `POST` | `/api/demo/seed-fleet` | Wygeneruj flotę 50 pojazdów + kierowców |
-| `POST` | `/api/demo/auto-dispatch?count={n}` | Automatycznie wyekspediuj n pojazdów |
+| `POST` | `/api/demo/auto-dispatch?count={n}` | Automatycznie wyekspediuj n pojazdów (Optymalizacja O(N)) |
 | `POST` | `/api/demo/clear-all` | Wyczyść wszystkie dane (TRUNCATE) |
 
 ---
@@ -280,19 +292,26 @@ Silnik uruchomiony jest jako zaplanowane zadanie (`@Scheduled`) wykonywane co 2 
 5. **Emituje zaktualizowany stan** przez STOMP do wszystkich podłączonych klientów
 6. **Przesuwa wirtualny zegar** o `realSecondsPassed × multiplier` sekund
 
+### Współbieżność i Self-Healing
+
+Aby sprostać ekstremalnym obciążeniom, wdrożono w nim zaawansowane mechanizmy klasy Enterprise:
+*   **Programowe Zarządzanie Transakcjami (ACID):** Zastosowanie `TransactionTemplate` gwarantuje atomowość całego "ticka" symulacji. Zmiany nie są emitowane do klientów, dopóki baza danych pomyślnie nie zakomituje całego cyklu.
+*   **Ochrona przed wyścigami o zasoby (Race Conditions):** System korzysta z optymistycznego blokowania (Optimistic Locking). Jeśli interfejs użytkownika lub bot RPA zmodyfikuje encję w tej samej milisekundzie co silnik, Spring wyrzuca `ObjectOptimisticLockingFailureException`.
+*   **Self-Healing (Samonaprawianie):** W przypadku kolizji transakcyjnej, silnik natychmiast wycofuje dany cykl z pamięci i automatycznie synchronizuje stan w następnym takcie, chroniąc bazę przed korupcją danych.
+
 ### Wirtualny zegar
 
 `VirtualClock` startuje od `2026-03-03 08:00`. Przy mnożniku **x600** jedna sekunda rzeczywista odpowiada 10 minutom wirtualnym, co pozwala symulować wielodniowe trasy europejskie w kilka minut.
 
 ### Stany pojazdu
 
-```
+~~~text
 AVAILABLE → BUSY (zlecenie przypisane)
 BUSY → BROKEN (awaria)
 BROKEN → WAITING_FOR_TOW (MSU przypisana)
 WAITING_FOR_TOW → BEING_TOWED (MSU w drodze)
 BEING_TOWED → AVAILABLE (pojazd odholowany do bazy)
-```
+~~~
 
 ---
 
@@ -302,11 +321,21 @@ Po zgłoszeniu awarii pojazdu (`/breakdown`) system uruchamia algorytm doboru je
 
 1. **Filtruje** wszystkie pojazdy oznaczone jako `isServiceUnit = true`
 2. **Szacuje dystans** każdej MSU do miejsca awarii, uwzględniając jej aktualny stan (`AVAILABLE`, `BUSY` — po zakończeniu obecnego zadania)
-3. **Oblicza rzeczywistą trasę** przez OSRM dla top 3 kandydatów
+3. **Weryfikacja Top-3 (OSRM):** System wybiera tylko 3 najbardziej obiecujące jednostki ratunkowe i wykonuje asynchroniczne zapytania do Open Source Routing Machine, aby poznać realny czas dojazdu uwzględniający rzeczywistą topografię dróg.
 4. **Wybiera MSU** o najkrótszym rzeczywistym dystansie całkowitym
 5. **Tworzy zlecenie techniczne** `RESCUE_APPROACHING` lub kolejkuje misję (`nextTowTargetId`)
 
 MSU obsługuje kolejkowanie — może mieć zaplanowaną następną misję już w trakcie realizacji bieżącej.
+
+---
+
+## Autonomiczna Integracja RPA (UiPath)
+
+TransFlow nie wymaga zewnętrznego Orchestratora UiPath. Posiada własny mikro-orkiestrator w klasie `AutomationService`, który samodzielnie wybudza lokalne maszyny z robotami na podstawie zmian statusów w bazie.
+
+**Wzorce odporności (Resilience & Error Handling):**
+*   **Tarcza Ochronna (Retry Scopes):** Z powodu wyścigów o zasoby z potężnym silnikiem symulacji, boty UiPath zostały owinięte mechanizmami weryfikacji kodów HTTP (Status Code Validation) i aktywnością `Retry Scope`. Jeśli serwer Spring odrzuci transakcję bota (błąd 500 z powodu blokady optymistycznej), bot czeka 5 sekund i bezbłędnie ponawia operację.
+*   **Filtrowanie "Zatrutych Pigułek" (Poison Pill Prevention):** Techniczne zlecenia ratunkowe (niemające klienta ani kwoty) są odfiltrowywane na poziomie interfejsów repozytorium (Spring Data JPA), co zapobiega awariom pętli wykonawczych w UiPath.
 
 ---
 
@@ -316,14 +345,14 @@ Panel **Ustawienia** oferuje zestaw narzędzi do szybkiego zasilenia systemu dan
 
 - **Seed Locations** — dodaje 25 hubów logistycznych w europejskich stolicach z typami BASE / PORT / WAREHOUSE
 - **Seed Fleet** — generuje 50 pojazdów (w tym 5 jednostek MSU Volvo FMX Recovery) z automatycznie przypisanymi kierowcami
-- **Auto-Dispatch** — asynchronicznie negocjuje trasy z OSRM i wyekspediowuje wybraną liczbę pojazdów; postęp wyświetlany jest w czasie rzeczywistym
+- **Auto-Dispatch** — asynchronicznie negocjuje trasy z OSRM i wyekspediowuje wybraną liczbę pojazdów (optymalizacja wydajnościowa, brak błędu N+1 Query Problem); postęp wyświetlany jest w czasie rzeczywistym
 - **Clear All** — czyści wszystkie tabele (`TRUNCATE ... RESTART IDENTITY CASCADE`)
 
 ---
 
 ## Struktura katalogów
 
-```
+~~~text
 transflow/
 ├── docker-compose.yml              # PostgreSQL + pgAdmin
 ├── Query.sql                       # Przykładowe dane startowe (INSERT)
@@ -400,7 +429,7 @@ transflow/
         │   └── settings/SettingsManager.tsx
         └── utils/
             └── mapUtils.ts
-```
+~~~
 
 ---
 
