@@ -6,6 +6,14 @@ TransFlow TMS to platforma klasy enterprise przeznaczona do zarządzania flotą 
 
 ---
 
+## Wideo Demonstracyjne (Demo)
+
+Złożoność platformy TransFlow TMS oraz płynną integrację autorskiego silnika symulacyjnego z botami UiPath najlepiej zobaczyć w akcji.
+
+**[ZOBACZ DEMO WIDEO Z DZIAŁANIA SYSTEMU NA YOUTUBE](https://youtu.be/X9C5d-vJ-Tw)**
+
+---
+
 ## Spis treści
 
 - [Przegląd systemu](#przegląd-systemu)
@@ -61,8 +69,8 @@ Ponadto platforma charakteryzuje się architekturą **Self-Healing** oraz w peł
 ### Automatyzacja (Robotic Process Automation)
 | Technologia | Zastosowanie |
 |---|---|
-| UiPath Studio / UiRobot | Generowanie PDF, wysyłka e-mail, weryfikacja płatności, audyt |
-| ProcessBuilder API | Wewnętrzny orkiestrator botów w kodzie Javy |
+| UiPath Studio / UiRobot | Budowa i uruchamianie robotów procesowych zasilanych silnikiem OCR Tesseract (generowanie faktur PDF, scraping, mailowa dystrybucja dokumentów). |
+| ProcessBuilder API | Wbudowany w backend mikro-orkiestrator zarządzający wątkami systemu operacyjnego, wywołujący paczki `.nupkg` w trybie bezgłowym (Headless Execution). |
 
 ### Infrastruktura
 | Technologia | Zastosowanie |
@@ -247,11 +255,6 @@ Po uruchomieniu systemu możesz skorzystać z panelu **Ustawienia → Demo**, ab
 | `POST` | `/api/simulation/toggle` | Uruchom / zatrzymaj symulację |
 | `POST` | `/api/simulation/speed?multiplier={n}` | Ustaw mnożnik czasu (1–600) |
 
-### Logi paliwowe — `/api/fuel`
-| Metoda | Endpoint | Opis |
-|---|---|---|
-| `POST` | `/api/fuel` | Zarejestruj tankowanie (z walidacją anomalii) |
-
 ### Demo — `/api/demo`
 | Metoda | Endpoint | Opis |
 |---|---|---|
@@ -331,12 +334,18 @@ MSU obsługuje kolejkowanie — może mieć zaplanowaną następną misję już 
 
 ## Autonomiczna Integracja RPA (UiPath)
 
-TransFlow nie wymaga zewnętrznego Orchestratora UiPath. Posiada własny mikro-orkiestrator w klasie `AutomationService`, który samodzielnie wybudza lokalne maszyny z robotami na podstawie zmian statusów w bazie.
+TransFlow TMS całkowicie eliminuje potrzebę utrzymywania kosztownej infrastruktury zewnętrznego UiPath Orchestratora. System implementuje autorski, wbudowany silnik kolejkowania i wyzwalania procesów zaimplementowany w klasie `AutomationService`.
+
+Dedykowany wątek monitorujący (`watchdog`) analizuje stan bazy danych za pośrednictwem Spring Data JPA i reaguje na zmiany biznesowe (np. ukończenie zlecenia, oczekiwanie na dokumenty), uruchamiając odpowiednie boty poprzez CLI robota z zachowaniem pełnej izolacji procesów.
+
+### Architektura botów w pętli logistycznej:
+* **Bot Fakturujący (Biller) -> `/api/rpa/pending-emails`:** Pobiera dane o zrealizowanych frachtach, tworzy dokumenty księgowe PDF i wysyła je do kontrahentów.
+* **Symulator Klienta (Collector) -> `/api/rpa/pending-payments`:** Odpytuje system o faktury, symuluje procesy decyzyjne i wysyła zwrotne potwierdzenia płatności, celowo modyfikując kwoty w celach testowych.
+* **Bot Audytujący (Auditor) -> `/api/rpa/audit`:** Ekstrahuje załączniki mailowe, odczytuje dane metodą OCR i wykonuje programową walidację krzyżową z registrem transakcyjnym systemu.
 
 **Wzorce odporności (Resilience & Error Handling):**
-*   **Tarcza Ochronna (Retry Scopes):** Z powodu wyścigów o zasoby z potężnym silnikiem symulacji, boty UiPath zostały owinięte mechanizmami weryfikacji kodów HTTP (Status Code Validation) i aktywnością `Retry Scope`. Jeśli serwer Spring odrzuci transakcję bota (błąd 500 z powodu blokady optymistycznej), bot czeka 5 sekund i bezbłędnie ponawia operację.
-*   **Filtrowanie "Zatrutych Pigułek" (Poison Pill Prevention):** Techniczne zlecenia ratunkowe (niemające klienta ani kwoty) są odfiltrowywane na poziomie interfejsów repozytorium (Spring Data JPA), co zapobiega awariom pętli wykonawczych w UiPath.
-
+* **Tarcza Ochronna (Retry Scopes):** Z powodu wysokiej współbieżności i potencjalnych wyścigów o zasoby z silnikiem symulacji, boty UiPath zostały owinięte aktywnością `Retry Scope` oraz mechanizmami walidacji kodów statusowych HTTP. W przypadku wystąpienia blokady optymistycznej na bazie danych (błąd 409/500), bot automatycznie wstrzymuje wykonanie na 5 sekund i bezpiecznie ponawia operację transakcyjną.
+* **Filtrowanie "Zatrutych Pigułek" (Poison Pill Prevention):** Wszelkie techniczne zapytania i zlecenia ratunkowe (np. MSU, holowania), które nie posiadają kontekstu finansowego ani powiązanego klienta, są odsiewane już na poziomie warstwy repozytoriów, zapobiegając awariom pętli wykonawczych i wyjątków NullPointerException wewnątrz robotów UiPath.
 ---
 
 ## Tryb Demo
@@ -353,10 +362,17 @@ Panel **Ustawienia** oferuje zestaw narzędzi do szybkiego zasilenia systemu dan
 ## Struktura katalogów
 
 ~~~text
-transflow/
-├── docker-compose.yml              # PostgreSQL + pgAdmin
-├── Query.sql                       # Przykładowe dane startowe (INSERT)
-├── test.http                       # Przykładowe żądania HTTP do testów
+transflow-enterprise/
+├── rpa/
+│   ├── invoice-bot/
+│   │   ├── Dispatch_GenerateInvoices_Main.xaml
+│   │   └── invoice-bot-flowchart.png
+│   ├── client-simulator/
+│   │   ├── Client_Simulator_Main.xaml
+│   │   └── client-simulator-flowchart.png
+│   └── audit-bot/
+│       ├── Auditor_VerifyInvoices_Main.xaml
+│       └── audit-bot-resilience.png
 ├── backend/
 │   ├── pom.xml
 │   └── src/main/java/com/transflow/backend/
