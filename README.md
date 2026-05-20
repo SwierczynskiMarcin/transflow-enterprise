@@ -85,28 +85,27 @@ Ponadto platforma charakteryzuje się architekturą **Self-Healing** oraz w peł
 System jest podzielony na trzy warstwy domenowe zgodne z zasadami Domain-Driven Design:
 
 ~~~text
-transflow/
-├── backend/                          # Spring Boot API
+transflow-enterprise/
+├── backend/
 │   └── src/main/java/com/transflow/backend/
-│       ├── fleet/                    # Domena: Pojazdy i Kierowcy
-│       ├── logistics/                # Domena: Zlecenia, Lokalizacje, Routing
-│       ├── simulation/               # Rdzeń: Silnik symulacji i fizyka
-│       │   └── strategy/             # Strategy Pattern: obsługa stanów zleceń
-│       ├── finance/                  # Domena: Logi tankowania
-│       ├── demo/                     # Narzędzia seedowania i auto-dispatch
-│       ├── config/                   # Konfiguracja WebSocket
-│       └── exception/                # Globalny handler błędów
-└── frontend-web/                     # React + TypeScript SPA
+│       ├── fleet/
+│       ├── logistics/
+│       ├── simulation/
+│       │   └── strategy/
+│       ├── demo/
+│       ├── config/
+│       └── exception/
+└── frontend-web/
     └── src/
-        ├── api/                      # Klienty HTTP (apiClient, fleetApi, etc.)
+        ├── api/
         ├── components/
-        │   ├── map/                  # Mapa Live (Canvas, Layers, Overlays)
-        │   ├── drivers/              # Panel zarządzania kierowcami
-        │   ├── vehicles/             # Panel zarządzania flotą
-        │   ├── locations/            # Panel sieci logistycznej
-        │   ├── orders/               # Panel zleceń
-        │   └── settings/             # Ustawienia i tryb Demo
-        └── context/                  # SimulationContext + MapContext
+        │   ├── map/
+        │   ├── drivers/
+        │   ├── vehicles/
+        │   ├── locations/
+        │   ├── orders/
+        │   └── settings/
+        └── context/
 ~~~
 
 ### Wzorzec Strategy w silniku symulacji
@@ -334,18 +333,46 @@ MSU obsługuje kolejkowanie — może mieć zaplanowaną następną misję już 
 
 ## Autonomiczna Integracja RPA (UiPath)
 
-TransFlow TMS całkowicie eliminuje potrzebę utrzymywania kosztownej infrastruktury zewnętrznego UiPath Orchestratora. System implementuje autorski, wbudowany silnik kolejkowania i wyzwalania procesów zaimplementowany w klasie `AutomationService`.
+Platforma TransFlow TMS wdraża innowacyjne podejście do robotyzacji procesów, całkowicie eliminując potrzebę utrzymywania kosztownej i zasobożernej zewnętrznej infrastruktury orkiestracyjnej (takiej jak UiPath Orchestrator). System implementuje autorski, wbudowany silnik kolejkowania i asynchronicznego wyzwalania procesów roboczych, wkomponowany bezpośrednio w architekturę backendu (klasa `AutomationService`).
 
-Dedykowany wątek monitorujący (`watchdog`) analizuje stan bazy danych za pośrednictwem Spring Data JPA i reaguje na zmiany biznesowe (np. ukończenie zlecenia, oczekiwanie na dokumenty), uruchamiając odpowiednie boty poprzez CLI robota z zachowaniem pełnej izolacji procesów.
+### Architektura Wbudowanego Mikro-Orkiestratora
 
-### Architektura botów w pętli logistycznej:
-* **Bot Fakturujący (Biller) -> `/api/rpa/pending-emails`:** Pobiera dane o zrealizowanych frachtach, tworzy dokumenty księgowe PDF i wysyła je do kontrahentów.
-* **Symulator Klienta (Collector) -> `/api/rpa/pending-payments`:** Odpytuje system o faktury, symuluje procesy decyzyjne i wysyła zwrotne potwierdzenia płatności, celowo modyfikując kwoty w celach testowych.
-* **Bot Audytujący (Auditor) -> `/api/rpa/audit`:** Ekstrahuje załączniki mailowe, odczytuje dane metodą OCR i wykonuje programową walidację krzyżową z registrem transakcyjnym systemu.
+Sercem integracji jest dedykowany wątek monitorujący (*watchdog*) uruchamiany asynchronicznie na backendzie. Wykorzystuje on warstwę persystencji Spring Data JPA do bezustannego analizowania stanu bazy danych i wykrywania kluczowych zdarzeń biznesowych (np. zmiana statusu zlecenia transportowego na `COMPLETED`).
 
-**Wzorce odporności (Resilience & Error Handling):**
-* **Tarcza Ochronna (Retry Scopes):** Z powodu wysokiej współbieżności i potencjalnych wyścigów o zasoby z silnikiem symulacji, boty UiPath zostały owinięte aktywnością `Retry Scope` oraz mechanizmami walidacji kodów statusowych HTTP. W przypadku wystąpienia blokady optymistycznej na bazie danych (błąd 409/500), bot automatycznie wstrzymuje wykonanie na 5 sekund i bezpiecznie ponawia operację transakcyjną.
-* **Filtrowanie "Zatrutych Pigułek" (Poison Pill Prevention):** Wszelkie techniczne zapytania i zlecenia ratunkowe (np. MSU, holowania), które nie posiadają kontekstu finansowego ani powiązanego klienta, są odsiewane już na poziomie warstwy repozytoriów, zapobiegając awariom pętli wykonawczych i wyjątków NullPointerException wewnątrz robotów UiPath.
+W momencie wykrycia zdarzenia wymagającego automatyzacji, backend za pośrednictwem natywnego interfejsu `ProcessBuilder API` inicjuje odizolowany wątek systemu operacyjnego. Wywołuje on lokalne środowisko uruchomieniowe robota (`UiRobot.exe`) w trybie (*Headless Execution*), przekazując spakowane pakiety procesów `.nupkg` wraz z dynamicznymi argumentami wejściowymi w formacie CLI. Pozwala to na pełną izolację pamięciową procesów i niezależne skalowanie zadań robotycznych.
+
+---
+
+### Architektura Botów w Zamkniętej Pętli Logistycznej
+
+System automatyzuje pełny obieg dokumentacji i weryfikacji danych poprzez trzy wyspecjalizowane roboty, działające w sekwencyjnej pętli zdarzeń:
+
+* **Bot Fakturujący (Biller) | Endpoint: `/api/rpa/pending-emails`**
+    * **Wyzwalacz:** Wykrycie zlecenia o statusie `COMPLETED`, które nie posiada jeszcze wygenerowanej dokumentacji księgowej (`rpaEmailSent = false`).
+    * **Przepływ pracy:** Robot wysyła zapytanie `GET` do endpointu backendu, pobierając strukturę danych JSON z kompletnymi informacjami (dystans, stawka za kilometr, dane kontrahenta). Następnie dynamicznie buduje dokument tekstowy na podstawie szablonu, generuje oficjalną fakturę w formacie PDF, zapisuje dane transakcyjne w lokalnym arkuszu Excel, po czym wykorzystuje protokół SMTP do automatycznej wysyłki dokumentu na adres e-mail klienta. Po zakończeniu operacji robot wywołuje endpoint `POST`, raportując sukces i przestawiając flagę w bazie danych.
+
+* **Symulator Klienta (Collector) | Endpoint: `/api/rpa/pending-payments`**
+    * **Wyzwalacz:** Obecność nieopłaconej faktury w rejestrze systemowym.
+    * **Przepływ pracy:** Robot imituje zachowanie człowieka po stronie kontrahenta. Loguje się do dedykowanej skrzynki pocztowej za pomocą aktywności IMAP/POP3, pobiera załącznik PDF przesłany przez Bota Fakturującego i przetwarza go. Następnie generuje dokument potwierdzenia przelewu, celowo modyfikując i zniekształcając kwoty transakcyjne w wybranych przypadkach (wstrzykiwanie anomalii w celach testowych). Na koniec wysyła zwrotny e-mail bankowy z fałszywym lub poprawnym potwierdzeniem na skrzynkę audytorską systemu.
+
+* **Bot Audytujący (Auditor) | Endpoint: `/api/rpa/audit`**
+    * **Wyzwalacz:** Cykliczny interwał czasowy lub powiadomienie o nowej wiadomości na skrzynce audytorskiej.
+    * **Przepływ pracy:** Kluczowy moduł systemu zapewniający spójność danych. Robot pobiera nieprzeczytane wiadomości e-mail z potwierdzeniami transakcji, izoluje załączniki PDF i uruchamia zaawansowany silnik optycznego rozpoznawania znaków **OCR Tesseract**. Po wyekstrahowaniu surowego tekstu z obrazu/dokumentu, robot parsuje ciągi znaków przy użyciu wyrażeń regularnych (Regex), wyciągając numer faktury oraz finalną kwotę. Następnie wykonuje zapytanie `POST` do `/api/rpa/audit`, przekazując te dane do backendu. Serwer wykonuje automatyczną walidację krzyżową z registrem bazodanowym. W przypadku wykrycia anomalii kwotowej (błędu wstrzykniętego przez Symulator), transakcja zostaje oznaczona statusem `AUDIT_FAILED`, a system natychmiastowo odcina procesy automatyczne dla danego klienta, zgłaszając alert do operatora.
+
+---
+
+### Wzorce Odporności Architektonicznej (Resilience & Exception Handling)
+
+Ze względu na asynchroniczny charakter pracy silnika symulacji i botów RPA, w kodzie przepływów `.xaml` zaimplementowano rygorystyczne mechanizmy odpornościowe klasy Enterprise:
+
+* **Tarcza Ochronna i Mechanizm Ponowień (Retry Scopes):** Operacje sieciowe HTTP oraz interakcje z systemem plików zostały zamknięte wewnątrz struktury `Retry Scope`. W przypadku wystąpienia błędu sieciowego, chwilowej niedostępności API lub blokady bazy danych spowodowanej lockiem transakcyjnym (np. HTTP 409 Conflict lub 500), robot nie przerywa działania awarią. Wykorzystuje on algorytm opóźnienia (*Linear Backoff*), wstrzymując wykonanie wątku na 5 sekund i podejmując do 3 prób ponownej synchronizacji transakcji.
+* **Filtrowanie:** Aby unikać powszechnego w architekturach kolejkowych problemu *Poison Pill* (zadań, które permanentnie crashują bota, blokując całą kolejkę), warstwa repozytoriów Spring Boot odrzuca i odsiewa zapytania uszkodzone lub niekompletne. Przykładowo, zlecenia techniczne (takie jak misje ratunkowe MSU czy holowania pojazdów), które z natury nie posiadają kontekstu finansowego ani powiązanego klienta, są automatycznie odfiltrowywane na poziomie zapytań SQL. Zapobiega to przekazywaniu pustych obiektów i powstawaniu wyjątków `NullPointerException` wewnątrz silnika wykonawczego UiPath.
+
+### Wizualizacja i schematy przepływu procesów:
+Pełną architekturę i detale implementacyjne każdego bota znajdziesz bezpośrednio przy plikach źródłowych:
+* **Schemat Bota Fakturującego:** Zrzut ekranu dostępny w katalogu `rpa/invoice-bot/`
+* **Schemat Symulator Klienta:** Zrzut ekranu dostępny w katalogu `rpa/client-simulator/`
+* **Schemat Bota Audytującego:** Zrzut ekranu dostępny w katalogu `rpa/audit-bot/`
 ---
 
 ## Tryb Demo
